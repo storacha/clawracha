@@ -1,0 +1,30 @@
+{
+  "id": "storacha-sync",
+  "name": "Storacha Workspace Sync",
+  "version": "0.0.1",
+  "description": "Sync OpenClaw workspaces to Storacha via UCN Pail",
+  "entry": "./src/plugin.ts",
+  "skills": [],
+  "config": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable workspace sync"
+      },
+      "watchPatterns": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["**/*.md"],
+        "description": "Glob patterns to watch for sync"
+      },
+      "ignorePatterns": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [".git", "node_modules", ".storacha"],
+        "description": "Patterns to ignore"
+      }
+    }
+  }
+}
