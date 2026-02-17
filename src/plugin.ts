@@ -70,14 +70,9 @@ export default function plugin(api: OpenClawPluginApi) {
       }
 
       const deviceConfig = await loadDeviceConfig(workspace);
-      if (!deviceConfig) {
-        ctx.logger.info("No device config found. Run /storacha-init first.");
-        return;
-      }
-
-      if (!deviceConfig.uploadDelegation) {
+      if (!deviceConfig || !deviceConfig.setupComplete) {
         ctx.logger.info(
-          "No upload delegation. Run /storacha-delegate upload <b64> first.",
+          "Setup not complete. Run /storacha-init or /storacha-join first.",
         );
         return;
       }
@@ -135,7 +130,7 @@ export default function plugin(api: OpenClawPluginApi) {
           content: [
             {
               type: "text" as const,
-              text: "Sync not initialized. Run /storacha-init first.",
+              text: "Sync not initialized. Run /storacha-init or /storacha-join first.",
             },
           ],
           details: null,
@@ -162,7 +157,7 @@ export default function plugin(api: OpenClawPluginApi) {
           content: [
             {
               type: "text" as const,
-              text: "Sync not initialized. Run /storacha-init first.",
+              text: "Sync not initialized. Run /storacha-init or /storacha-join first.",
             },
           ],
           details: null,
@@ -186,37 +181,64 @@ export default function plugin(api: OpenClawPluginApi) {
 
   api.registerCommand({
     name: "storacha-init",
-    description: "Initialize Storacha sync for this workspace",
+    description:
+      "Initialize a NEW Storacha workspace (first device). Usage: /storacha-init <upload-delegation-b64>",
+    acceptsArgs: true,
     handler: async (_ctx) => {
       const workspace = workspaceDir;
       if (!workspace) return { text: "No workspace configured." };
+
+      const b64 = _ctx.args?.trim();
+      if (!b64) {
+        return {
+          text: [
+            "Usage: `/storacha-init <upload-delegation-b64>`",
+            "",
+            "This creates a **new** workspace. If you're syncing from an existing device, use `/storacha-join` instead.",
+          ].join("\n"),
+        };
+      }
+
+      // Validate delegation
+      const bytes = Buffer.from(b64, "base64");
+      const { ok: delegation, error } = await extractDelegation(bytes);
+      if (!delegation) {
+        return { text: `Invalid delegation: ${error}` };
+      }
 
       const { Agent } = await import("@storacha/ucn/pail");
       const agent = await Agent.generate();
       const agentKey = Agent.format(agent);
 
-      const config: DeviceConfig = { agentKey };
+      const spaceDID = delegation.capabilities[0]?.with;
+
+      const config: DeviceConfig = {
+        agentKey,
+        uploadDelegation: b64,
+        spaceDID: spaceDID ?? undefined,
+        setupComplete: true,
+      };
       await saveDeviceConfig(workspace, config);
 
       return {
         text: [
-          "🔥 Storacha sync initialized!",
+          "\u{1f525} Storacha workspace initialized!",
           `Agent DID: \`${agent.did()}\``,
+          `Space: \`${spaceDID ?? "unknown"}\``,
           "",
-          "Next steps:",
-          "1. Import upload delegation: `/storacha-delegate upload <base64>`",
-          "2. Import name delegation: `/storacha-delegate name <base64>`",
+          "Restart the gateway to start syncing.",
           "",
-          "Or have an existing device grant access: `/storacha-grant <this-agent-DID>`",
+          "To add another device, run `/storacha-grant <their-agent-DID>` here,",
+          "then `/storacha-join <upload-b64> <name-b64>` on the other device.",
         ].join("\n"),
       };
     },
   });
 
   api.registerCommand({
-    name: "storacha-delegate",
+    name: "storacha-join",
     description:
-      "Import a delegation. Usage: /storacha-delegate <upload|name> <base64>",
+      "Join an existing Storacha workspace from another device. Usage: /storacha-join <upload-delegation-b64> <name-delegation-b64>",
     acceptsArgs: true,
     handler: async (_ctx) => {
       const workspace = workspaceDir;
@@ -225,67 +247,95 @@ export default function plugin(api: OpenClawPluginApi) {
       const args = _ctx.args?.trim();
       if (!args) {
         return {
-          text: "Usage: `/storacha-delegate <upload|name> <base64>`",
+          text: [
+            "Usage: `/storacha-join <upload-delegation-b64> <name-delegation-b64>`",
+            "",
+            "Get both delegations by running `/storacha-grant` on the existing device.",
+            "If you're setting up a **new** workspace, use `/storacha-init` instead.",
+          ].join("\n"),
         };
       }
 
       const spaceIdx = args.indexOf(" ");
       if (spaceIdx === -1) {
         return {
-          text: "Usage: `/storacha-delegate <upload|name> <base64>`",
+          text: "Two arguments required: `/storacha-join <upload-b64> <name-b64>`",
         };
       }
 
-      const subcommand = args.slice(0, spaceIdx).toLowerCase();
-      const b64 = args.slice(spaceIdx + 1).trim();
+      const uploadB64 = args.slice(0, spaceIdx).trim();
+      const nameB64 = args.slice(spaceIdx + 1).trim();
 
-      if (subcommand !== "upload" && subcommand !== "name") {
+      if (!uploadB64 || !nameB64) {
         return {
-          text: `Unknown subcommand \`${subcommand}\`. Use \`upload\` or \`name\`.`,
+          text: "Two arguments required: `/storacha-join <upload-b64> <name-b64>`",
         };
       }
 
-      if (!b64) {
-        return { text: "Missing base64 delegation data." };
+      // Validate upload delegation
+      const uploadBytes = Buffer.from(uploadB64, "base64");
+      const { ok: uploadDelegation, error: uploadErr } =
+        await extractDelegation(uploadBytes);
+      if (!uploadDelegation) {
+        return { text: `Invalid upload delegation: ${uploadErr}` };
       }
 
-      const config = await loadDeviceConfig(workspace);
-      if (!config) {
-        return { text: "Not initialized. Run `/storacha-init` first." };
+      // Validate name delegation
+      const nameBytes = Buffer.from(nameB64, "base64");
+      const { ok: nameDelegation, error: nameErr } =
+        await extractDelegation(nameBytes);
+      if (!nameDelegation) {
+        return { text: `Invalid name delegation: ${nameErr}` };
       }
 
-      // Validate the delegation can be extracted
-      const bytes = Buffer.from(b64, "base64");
-      const { ok: delegation, error } = await extractDelegation(bytes);
-      if (!delegation) {
-        return { text: `Invalid delegation: ${error}` };
-      }
+      const { Agent } = await import("@storacha/ucn/pail");
+      const agent = await Agent.generate();
+      const agentKey = Agent.format(agent);
 
-      if (subcommand === "upload") {
-        config.uploadDelegation = b64;
-        // Extract space DID from the delegation's resource
-        const spaceDID = delegation.capabilities[0]?.with;
-        if (spaceDID) {
-          config.spaceDID = spaceDID;
-        }
-      } else {
-        config.nameDelegation = b64;
-      }
+      const spaceDID = uploadDelegation.capabilities[0]?.with;
 
+      const config: DeviceConfig = {
+        agentKey,
+        uploadDelegation: uploadB64,
+        nameDelegation: nameB64,
+        spaceDID: spaceDID ?? undefined,
+        setupComplete: true,
+      };
       await saveDeviceConfig(workspace, config);
 
-      const status = [
-        `✅ ${subcommand} delegation imported!`,
-        "",
-        `Upload delegation: ${config.uploadDelegation ? "✅" : "❌ missing"}`,
-        `Name delegation: ${config.nameDelegation ? "✅" : "❌ missing"}`,
-      ];
+      // Pull remote state immediately before watcher starts
+      let pullCount = 0;
+      try {
+        const storachaClient = await createStorachaClient(config);
+        const engine = new SyncEngine(storachaClient, workspace);
+        await engine.init(config);
+        pullCount = await engine.pullRemote();
 
-      if (config.uploadDelegation && config.nameDelegation) {
-        status.push("", "Both delegations set. Restart the gateway to start syncing.");
+        // Save name archive after pull
+        const nameArchive = await engine.exportNameArchive();
+        config.nameArchive = nameArchive;
+        await saveDeviceConfig(workspace, config);
+      } catch (err: any) {
+        return {
+          text: [
+            "\u26a0\ufe0f Delegations saved but initial pull failed:",
+            `\`${err.message}\``,
+            "",
+            "Restart the gateway to retry.",
+          ].join("\n"),
+        };
       }
 
-      return { text: status.join("\n") };
+      return {
+        text: [
+          "\u{1f525} Joined existing Storacha workspace!",
+          `Agent DID: \`${agent.did()}\``,
+          `Space: \`${spaceDID ?? "unknown"}\``,
+          `Pulled ${pullCount} files from remote.`,
+          "",
+          "Restart the gateway to start syncing.",
+        ].join("\n"),
+      };
     },
   });
 
@@ -305,7 +355,9 @@ export default function plugin(api: OpenClawPluginApi) {
 
       const config = await loadDeviceConfig(workspace);
       if (!config) {
-        return { text: "Not initialized. Run `/storacha-init` first." };
+        return {
+          text: "Not initialized. Run `/storacha-init` or `/storacha-join` first.",
+        };
       }
 
       const results: string[] = [];
@@ -314,8 +366,6 @@ export default function plugin(api: OpenClawPluginApi) {
       if (config.uploadDelegation) {
         try {
           const storachaClient = await createStorachaClient(config);
-          const { parse: parseDID } = await import("@ucanto/principal/ed25519");
-          // createDelegation needs a Principal (just needs .did())
           const audience = { did: () => targetDID } as any;
           const uploadDelegation = await storachaClient.createDelegation(
             audience,
@@ -329,13 +379,13 @@ export default function plugin(api: OpenClawPluginApi) {
           const { ok: archiveBytes } = await uploadDelegation.archive();
           if (archiveBytes) {
             const b64 = Buffer.from(archiveBytes).toString("base64");
-            results.push(`**Upload delegation:**\n\`\`\`\n${b64}\n\`\`\``);
+            results.push("**Upload delegation:**\n```\n" + b64 + "\n```");
           }
         } catch (err: any) {
-          results.push(`❌ Failed to create upload delegation: ${err.message}`);
+          results.push(`\u274c Failed to create upload delegation: ${err.message}`);
         }
       } else {
-        results.push("⚠️ No upload delegation to re-delegate.");
+        results.push("\u26a0\ufe0f No upload delegation to re-delegate.");
       }
 
       // Re-delegate name (pail sync) capability
@@ -344,51 +394,47 @@ export default function plugin(api: OpenClawPluginApi) {
           const { Agent, Name } = await import("@storacha/ucn/pail");
           const agent = Agent.parse(config.agentKey);
 
-          // Reconstruct the name from config
           let name;
           if (config.nameArchive) {
             const archiveBytes = Buffer.from(config.nameArchive, "base64");
             name = await Name.extract(agent, archiveBytes);
           } else {
-            // Need the name delegation to reconstruct
             const nameBytes = Buffer.from(config.nameDelegation, "base64");
-            const { ok: nameDelegation } =
-              await extractDelegation(nameBytes);
-            if (!nameDelegation) {
-              results.push("❌ Failed to extract name delegation.");
+            const { ok: nameDel } = await extractDelegation(nameBytes);
+            if (!nameDel) {
+              results.push("\u274c Failed to extract name delegation.");
             } else {
-              name = Name.from(agent, [nameDelegation]);
+              name = Name.from(agent, [nameDel]);
             }
           }
 
           if (name) {
-            const nameDelegation = await name.grant(targetDID);
-            const { ok: archiveBytes } = await nameDelegation.archive();
+            const nameDel = await name.grant(targetDID);
+            const { ok: archiveBytes } = await nameDel.archive();
             if (archiveBytes) {
               const b64 = Buffer.from(archiveBytes).toString("base64");
-              results.push(`**Name delegation:**\n\`\`\`\n${b64}\n\`\`\``);
+              results.push("**Name delegation:**\n```\n" + b64 + "\n```");
             }
           }
         } catch (err: any) {
-          results.push(`❌ Failed to create name delegation: ${err.message}`);
+          results.push(`\u274c Failed to create name delegation: ${err.message}`);
         }
       } else {
-        results.push("⚠️ No name delegation to re-delegate.");
+        results.push("\u26a0\ufe0f No name delegation to re-delegate.");
       }
 
       if (results.length === 0) {
-        return { text: "Nothing to grant. Import delegations first." };
+        return { text: "Nothing to grant. Set up this device first." };
       }
 
       return {
         text: [
-          `🔥 Delegations for \`${targetDID}\`:`,
+          `\u{1f525} Delegations for \`${targetDID}\`:`,
           "",
           ...results,
           "",
-          "The target device should import these with:",
-          "`/storacha-delegate upload <b64>`",
-          "`/storacha-delegate name <b64>`",
+          "The target device should run:",
+          "`/storacha-join <upload-b64> <name-b64>`",
         ].join("\n"),
       };
     },
@@ -403,15 +449,18 @@ export default function plugin(api: OpenClawPluginApi) {
 
       const config = await loadDeviceConfig(workspace);
       if (!config)
-        return { text: "Not initialized. Run /storacha-init first." };
+        return {
+          text: "Not initialized. Run /storacha-init or /storacha-join first.",
+        };
 
       const lines = [
-        "🔥 Storacha Sync Status",
+        "\u{1f525} Storacha Sync Status",
         `Agent: configured`,
-        `Upload delegation: ${config.uploadDelegation ? "✅" : "❌ not set"}`,
-        `Name delegation: ${config.nameDelegation ? "✅" : "❌ not set"}`,
+        `Upload delegation: ${config.uploadDelegation ? "\u2705" : "\u274c not set"}`,
+        `Name delegation: ${config.nameDelegation ? "\u2705" : "\u274c not set"}`,
         `Space DID: ${config.spaceDID ?? "unknown"}`,
         `Name Archive: ${config.nameArchive ? "saved" : "not created"}`,
+        `Setup complete: ${config.setupComplete ? "\u2705" : "\u274c"}`,
       ];
 
       if (syncEngine) {

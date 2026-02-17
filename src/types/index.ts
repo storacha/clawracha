@@ -25,6 +25,8 @@ export interface DeviceConfig {
   nameDelegation?: string;
   /** Space DID extracted from upload delegation */
   spaceDID?: string;
+  /** Whether setup is complete (watcher won't start without this) */
+  setupComplete?: boolean;
 }
 
 /** Current sync state */

@@ -202,6 +202,37 @@ export class SyncEngine {
     });
   }
 
+
+  /**
+   * Pull all remote state and write to local filesystem.
+   * Used by /storacha-join to overwrite local with remote before watcher starts.
+   */
+  async pullRemote(): Promise<number> {
+    if (!this.name) throw new Error("Sync engine not initialized");
+
+    try {
+      const result = await Revision.resolve(this.blocks, this.name, {
+        base: this.current ?? undefined,
+      });
+      await this.storeBlocks(result.additions);
+      this.current = result.value;
+    } catch (err) {
+      if (!(err instanceof NoValueError)) throw err;
+    }
+
+    const entries = await this.getPailEntries();
+    if (entries.size > 0) {
+      const allPaths = [...entries.keys()];
+      await applyRemoteChanges(allPaths, entries, this.workspace, {
+        blocks: this.blocks,
+        current: this.current ?? undefined,
+      });
+    }
+
+    this.lastSync = Date.now();
+    return entries.size;
+  }
+
   async status(): Promise<SyncState> {
     const entries = await this.getPailEntries();
     return {
