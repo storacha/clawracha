@@ -3,6 +3,12 @@
   "version": "0.0.4",
   "description": "OpenClaw plugin for Storacha workspace sync via UCN Pail",
   "type": "module",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "dist/plugin.js",
   "types": "dist/plugin.d.ts",
   "openclaw": {
