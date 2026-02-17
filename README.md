@@ -23,21 +23,31 @@ openclaw plugins install @storacha/clawracha
 
 Setup is done via slash commands in your chat session with the agent (not CLI commands).
 
-### New workspace (first device)
+### Step 1: Initialize the agent
 
 ```
-/storacha-init <upload-delegation-b64>
+/storacha-init
 ```
 
-Creates a fresh workspace with a new UCN Name. You'll need an upload delegation from a Storacha space owner.
+Generates an agent identity and displays the Agent DID. You'll need this DID to create delegations.
 
-### Join an existing workspace (additional devices)
+### Step 2: Choose your path
+
+**New workspace (first device):**
+
+```
+/storacha-setup <upload-delegation-b64>
+```
+
+Have the space owner create an upload delegation for your Agent DID, then import it. Creates a fresh UCN Name and starts syncing.
+
+**Join an existing workspace (additional devices):**
 
 ```
 /storacha-join <upload-delegation-b64> <name-delegation-b64>
 ```
 
-Joins an existing workspace from another device. Both delegations are required — get them by running `/storacha-grant` on the existing device. The join command pulls all remote files before the watcher starts, so your local workspace is fully synced from the start.
+Get both delegations by running `/storacha-grant` on the existing device. The join command pulls all remote files before the watcher starts, so your local workspace is fully synced from the start.
 
 ### Grant access to another device
 

@@ -80,7 +80,7 @@ export default function plugin(api: OpenClawPluginApi) {
       const deviceConfig = await loadDeviceConfig(workspace);
       if (!deviceConfig || !deviceConfig.setupComplete) {
         ctx.logger.info(
-          "Setup not complete. Run /storacha-init or /storacha-join first.",
+          "Setup not complete. Run /storacha-init first, then /storacha-setup or /storacha-join.",
         );
         return;
       }
@@ -138,7 +138,7 @@ export default function plugin(api: OpenClawPluginApi) {
           content: [
             {
               type: "text" as const,
-              text: "Sync not initialized. Run /storacha-init or /storacha-join first.",
+              text: "Sync not initialized. Run /storacha-init first, then /storacha-setup or /storacha-join.",
             },
           ],
           details: null,
@@ -165,7 +165,7 @@ export default function plugin(api: OpenClawPluginApi) {
           content: [
             {
               type: "text" as const,
-              text: "Sync not initialized. Run /storacha-init or /storacha-join first.",
+              text: "Sync not initialized. Run /storacha-init first, then /storacha-setup or /storacha-join.",
             },
           ],
           details: null,
@@ -189,20 +189,79 @@ export default function plugin(api: OpenClawPluginApi) {
 
   api.registerCommand({
     name: "storacha-init",
+    description: "Generate an agent identity for Storacha sync",
+    handler: async (_ctx) => {
+      const workspace = workspaceDir;
+      if (!workspace) return { text: "No workspace configured." };
+
+      // Check if already initialized
+      const existing = await loadDeviceConfig(workspace);
+      if (existing?.agentKey) {
+        const { Agent } = await import("@storacha/ucn/pail");
+        const agent = Agent.parse(existing.agentKey);
+        return {
+          text: [
+            "Agent already initialized.",
+            `Agent DID: \`${agent.did()}\``,
+            "",
+            existing.setupComplete
+              ? "Setup is complete. Use `/storacha-status` to check sync state."
+              : "**Next step — choose one:**",
+            ...(!existing.setupComplete
+              ? [
+                  "- **New workspace:** Have the space owner create an upload delegation for this DID, then run `/storacha-setup <upload-b64>`",
+                  "- **Join existing:** Have the other device run `/storacha-grant <this-DID>`, then run `/storacha-join <upload-b64> <name-b64>`",
+                ]
+              : []),
+          ].join("\n"),
+        };
+      }
+
+      const { Agent } = await import("@storacha/ucn/pail");
+      const agent = await Agent.generate();
+      const agentKey = Agent.format(agent);
+
+      const config: DeviceConfig = { agentKey };
+      await saveDeviceConfig(workspace, config);
+
+      return {
+        text: [
+          "\u{1f525} Agent initialized!",
+          `Agent DID: \`${agent.did()}\``,
+          "",
+          "**Next step \u2014 choose one:**",
+          "- **New workspace:** Have the space owner create an upload delegation for this DID, then run `/storacha-setup <upload-b64>`",
+          "- **Join existing workspace:** Have the other device run `/storacha-grant <this-DID>`, then run `/storacha-join <upload-b64> <name-b64>`",
+        ].join("\n"),
+      };
+    },
+  });
+
+  api.registerCommand({
+    name: "storacha-setup",
     description:
-      "Initialize a NEW Storacha workspace (first device). Usage: /storacha-init <upload-delegation-b64>",
+      "Set up a NEW Storacha workspace (first device). Usage: /storacha-setup <upload-delegation-b64>",
     acceptsArgs: true,
     handler: async (_ctx) => {
       const workspace = workspaceDir;
       if (!workspace) return { text: "No workspace configured." };
 
+      const config = await loadDeviceConfig(workspace);
+      if (!config?.agentKey) {
+        return { text: "Run `/storacha-init` first to generate an agent identity." };
+      }
+
+      if (config.setupComplete) {
+        return { text: "Setup already complete. Use `/storacha-status` to check sync state." };
+      }
+
       const b64 = _ctx.args?.trim();
       if (!b64) {
         return {
           text: [
-            "Usage: `/storacha-init <upload-delegation-b64>`",
+            "Usage: `/storacha-setup <upload-delegation-b64>`",
             "",
-            "This creates a **new** workspace. If you're syncing from an existing device, use `/storacha-join` instead.",
+            "This creates a **new** workspace. If you're joining an existing workspace, use `/storacha-join` instead.",
           ].join("\n"),
         };
       }
@@ -214,23 +273,19 @@ export default function plugin(api: OpenClawPluginApi) {
         return { text: `Invalid delegation: ${error}` };
       }
 
-      const { Agent } = await import("@storacha/ucn/pail");
-      const agent = await Agent.generate();
-      const agentKey = Agent.format(agent);
-
       const spaceDID = delegation.capabilities[0]?.with;
 
-      const config: DeviceConfig = {
-        agentKey,
-        uploadDelegation: b64,
-        spaceDID: spaceDID ?? undefined,
-        setupComplete: true,
-      };
+      config.uploadDelegation = b64;
+      config.spaceDID = spaceDID ?? undefined;
+      config.setupComplete = true;
       await saveDeviceConfig(workspace, config);
+
+      const { Agent } = await import("@storacha/ucn/pail");
+      const agent = Agent.parse(config.agentKey);
 
       return {
         text: [
-          "\u{1f525} Storacha workspace initialized!",
+          "\u{1f525} Storacha workspace ready!",
           `Agent DID: \`${agent.did()}\``,
           `Space: \`${spaceDID ?? "unknown"}\``,
           "",
@@ -246,7 +301,7 @@ export default function plugin(api: OpenClawPluginApi) {
   api.registerCommand({
     name: "storacha-join",
     description:
-      "Join an existing Storacha workspace from another device. Usage: /storacha-join <upload-delegation-b64> <name-delegation-b64>",
+      "Join an existing Storacha workspace from another device. Run /storacha-init first. Usage: /storacha-join <upload-delegation-b64> <name-delegation-b64>",
     acceptsArgs: true,
     handler: async (_ctx) => {
       const workspace = workspaceDir;
@@ -259,7 +314,7 @@ export default function plugin(api: OpenClawPluginApi) {
             "Usage: `/storacha-join <upload-delegation-b64> <name-delegation-b64>`",
             "",
             "Get both delegations by running `/storacha-grant` on the existing device.",
-            "If you're setting up a **new** workspace, use `/storacha-init` instead.",
+            "If you're setting up a **new** workspace, use `/storacha-setup` instead.",
           ].join("\n"),
         };
       }
@@ -296,19 +351,24 @@ export default function plugin(api: OpenClawPluginApi) {
         return { text: `Invalid name delegation: ${nameErr}` };
       }
 
+      const config = await loadDeviceConfig(workspace);
+      if (!config?.agentKey) {
+        return { text: "Run `/storacha-init` first to generate an agent identity." };
+      }
+
+      if (config.setupComplete) {
+        return { text: "Setup already complete. Use `/storacha-status` to check sync state." };
+      }
+
       const { Agent } = await import("@storacha/ucn/pail");
-      const agent = await Agent.generate();
-      const agentKey = Agent.format(agent);
+      const agent = Agent.parse(config.agentKey);
 
       const spaceDID = uploadDelegation.capabilities[0]?.with;
 
-      const config: DeviceConfig = {
-        agentKey,
-        uploadDelegation: uploadB64,
-        nameDelegation: nameB64,
-        spaceDID: spaceDID ?? undefined,
-        setupComplete: true,
-      };
+      config.uploadDelegation = uploadB64;
+      config.nameDelegation = nameB64;
+      config.spaceDID = spaceDID ?? undefined;
+      config.setupComplete = true;
       await saveDeviceConfig(workspace, config);
 
       // Pull remote state immediately before watcher starts
@@ -364,7 +424,7 @@ export default function plugin(api: OpenClawPluginApi) {
       const config = await loadDeviceConfig(workspace);
       if (!config) {
         return {
-          text: "Not initialized. Run `/storacha-init` or `/storacha-join` first.",
+          text: "Not initialized. Run `/storacha-init` first.",
         };
       }
 
@@ -458,7 +518,7 @@ export default function plugin(api: OpenClawPluginApi) {
       const config = await loadDeviceConfig(workspace);
       if (!config)
         return {
-          text: "Not initialized. Run /storacha-init or /storacha-join first.",
+          text: "Not initialized. Run `/storacha-init` first.",
         };
 
       const lines = [
