@@ -6,7 +6,9 @@
  * used by the Storacha CLI (`storacha delegation create --base64`).
  */
 
+import * as fs from "node:fs/promises";
 import { CID } from "multiformats/cid";
+import { extract } from "@storacha/client/delegation";
 import { base64 } from "multiformats/bases/base64";
 import { identity } from "multiformats/hashes/identity";
 
@@ -34,4 +36,25 @@ export function decodeDelegation(encoded: string): Uint8Array {
     );
   }
   return cid.multihash.digest;
+}
+
+
+/**
+ * Read a delegation from either a file path (raw CAR) or a CID string (base64).
+ * Returns the extracted delegation.
+ */
+export async function readDelegationArg(input: string) {
+  let bytes: Uint8Array;
+  try {
+    // Try reading as file first
+    bytes = await fs.readFile(input);
+  } catch {
+    // Not a file — treat as CID string
+    bytes = decodeDelegation(input);
+  }
+  const { ok: delegation, error } = await extract(bytes);
+  if (!delegation) {
+    throw new Error(`Invalid delegation: ${error}`);
+  }
+  return delegation;
 }

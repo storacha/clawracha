@@ -21,12 +21,14 @@ openclaw plugins install @storacha/clawracha
 
 ## Setup
 
-Setup is done via slash commands in your chat session with the agent (not CLI commands).
+Setup is done via CLI commands on the host (not slash commands in chat).
+
+All commands require `--agent <id>` to specify which agent workspace to configure.
 
 ### Step 1: Initialize the agent
 
-```
-/storacha-init
+```bash
+openclaw clawracha init --agent <id>
 ```
 
 Generates an agent identity and displays the Agent DID. You'll need this DID to create delegations.
@@ -35,32 +37,32 @@ Generates an agent identity and displays the Agent DID. You'll need this DID to 
 
 **New workspace (first device):**
 
-```
-/storacha-setup <upload-delegation-b64>
+```bash
+openclaw clawracha setup <delegation> --agent <id>
 ```
 
-Have the space owner create an upload delegation for your Agent DID, then import it. Creates a fresh UCN Name and starts syncing.
+`<delegation>` can be a file path (raw CAR) or a base64 CID string. Have the space owner create an upload delegation for your Agent DID, then import it.
 
 **Join an existing workspace (additional devices):**
 
-```
-/storacha-join <upload-delegation-b64> <name-delegation-b64>
+```bash
+openclaw clawracha join <upload-delegation> <name-delegation> --agent <id>
 ```
 
-Get both delegations by running `/storacha-grant` on the existing device. The join command pulls all remote files before the watcher starts, so your local workspace is fully synced from the start.
+Get both delegations by running `openclaw clawracha grant` on the existing device. Arguments can be file paths or base64 CID strings. The join command pulls all remote files before the watcher starts.
 
 ### Grant access to another device
 
-```
-/storacha-grant <target-agent-DID>
+```bash
+openclaw clawracha grant <target-agent-DID> --agent <id>
 ```
 
-Generates upload and name delegations for the target device. The target device uses these with `/storacha-join`.
+Generates upload and name delegations for the target device.
 
 ### Check status
 
-```
-/storacha-status
+```bash
+openclaw clawracha status --agent <id>
 ```
 
 After setup, restart the gateway to start syncing:

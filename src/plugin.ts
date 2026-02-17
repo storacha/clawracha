@@ -2,14 +2,13 @@
  * OpenClaw Plugin Entry Point
  *
  * Registers:
- * - Background service for file watching and sync
+ * - Background service that syncs ALL agent workspaces with .storacha configs
+ * - CLI commands for setup and management (openclaw clawracha ...)
  * - Agent tools for manual sync control
- * - Slash commands for setup
  */
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { extract as extractDelegation } from "@storacha/client/delegation";
 import type {
   OpenClawPluginApi,
   OpenClawPluginServiceContext,
@@ -17,18 +16,30 @@ import type {
 } from "openclaw/plugin-sdk";
 import type { DeviceConfig, SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
-import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
 import { FileWatcher } from "./watcher.js";
 import { createStorachaClient } from "./utils/client.js";
+import {
+  decodeDelegation,
+  encodeDelegation,
+  readDelegationArg,
+} from "./utils/delegation.js";
+import {
+  resolveAgentWorkspace,
+  getAgentIds,
+} from "./utils/workspace.js";
 
-// Global state
-let syncEngine: SyncEngine | null = null;
-let fileWatcher: FileWatcher | null = null;
-let workspaceDir: string | undefined;
+// Per-workspace sync state
+interface WorkspaceSync {
+  engine: SyncEngine;
+  watcher: FileWatcher;
+  workspace: string;
+  agentId: string;
+}
 
-/**
- * Load device config from .storacha/config.json
- */
+const activeSyncers = new Map<string, WorkspaceSync>();
+
+// --- Config helpers ---
+
 async function loadDeviceConfig(
   workspace: string,
 ): Promise<DeviceConfig | null> {
@@ -42,9 +53,6 @@ async function loadDeviceConfig(
   }
 }
 
-/**
- * Save device config
- */
 async function saveDeviceConfig(
   workspace: string,
   config: DeviceConfig,
@@ -55,14 +63,58 @@ async function saveDeviceConfig(
   await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 }
 
-/**
- * Plugin entry — called by OpenClaw when the plugin is loaded.
- */
+// --- Service helpers ---
+
+async function startWorkspaceSync(
+  workspace: string,
+  agentId: string,
+  pluginConfig: Partial<SyncPluginConfig>,
+  logger: { info: (msg: string) => void; warn: (msg: string) => void },
+): Promise<WorkspaceSync | null> {
+  const deviceConfig = await loadDeviceConfig(workspace);
+  if (!deviceConfig || !deviceConfig.setupComplete) {
+    return null;
+  }
+
+  const storachaClient = await createStorachaClient(deviceConfig);
+  const engine = new SyncEngine(storachaClient, workspace);
+  await engine.init(deviceConfig);
+
+  const watcher = new FileWatcher({
+    workspace,
+    config: {
+      enabled: true,
+      watchPatterns: pluginConfig.watchPatterns ?? ["**/*"],
+      ignorePatterns: pluginConfig.ignorePatterns ?? [
+        ".storacha/**",
+        "node_modules/**",
+        ".git/**",
+        "dist/**",
+      ],
+    },
+    onChanges: async (changes) => {
+      await engine.processChanges(changes);
+      await engine.sync();
+
+      const nameArchive = await engine.exportNameArchive();
+      const updatedConfig = { ...deviceConfig, nameArchive };
+      await saveDeviceConfig(workspace, updatedConfig);
+    },
+  });
+
+  await watcher.start();
+  logger.info(`[${agentId}] Started syncing workspace: ${workspace}`);
+
+  return { engine, watcher, workspace, agentId };
+}
+
+// --- Plugin entry ---
+
 export default function plugin(api: OpenClawPluginApi) {
-  // Capture plugin-specific config at registration time
   const pluginConfig = (api.pluginConfig ?? {}) as Partial<SyncPluginConfig>;
 
-  // Register background service
+  // --- Background service: one syncer per agent workspace ---
+
   api.registerService({
     id: "storacha-sync",
     async start(ctx: OpenClawPluginServiceContext) {
@@ -71,81 +123,69 @@ export default function plugin(api: OpenClawPluginApi) {
         return;
       }
 
-      workspaceDir = ctx.workspaceDir;
-      const workspace = workspaceDir;
-      if (!workspace) {
-        ctx.logger.warn("No workspace directory configured");
-        return;
+      const agentIds = getAgentIds(ctx.config);
+
+      for (const agentId of agentIds) {
+        const workspace = resolveAgentWorkspace(ctx.config, agentId);
+        try {
+          const sync = await startWorkspaceSync(
+            workspace,
+            agentId,
+            pluginConfig,
+            ctx.logger,
+          );
+          if (sync) {
+            activeSyncers.set(workspace, sync);
+          }
+        } catch (err: any) {
+          ctx.logger.warn(
+            `[${agentId}] Failed to start sync: ${err.message}`,
+          );
+        }
       }
 
-      const deviceConfig = await loadDeviceConfig(workspace);
-      if (!deviceConfig || !deviceConfig.setupComplete) {
+      if (activeSyncers.size === 0) {
         ctx.logger.info(
-          "Setup not complete. Run /storacha-init first, then /storacha-setup or /storacha-join.",
+          "No agent workspaces configured for Storacha sync. Use `openclaw clawracha init --agent <id>` to set up.",
         );
-        return;
+      } else {
+        ctx.logger.info(
+          `Storacha sync active for ${activeSyncers.size} workspace(s).`,
+        );
       }
-
-      const storachaClient = await createStorachaClient(deviceConfig);
-      syncEngine = new SyncEngine(storachaClient, workspace);
-      await syncEngine.init(deviceConfig);
-
-      fileWatcher = new FileWatcher({
-        workspace,
-        config: {
-          enabled: true,
-          watchPatterns: pluginConfig.watchPatterns ?? ["**/*"],
-          ignorePatterns: pluginConfig.ignorePatterns ?? [
-            ".storacha/**",
-            "node_modules/**",
-            ".git/**",
-            "dist/**",
-          ],
-        },
-        onChanges: async (changes) => {
-          if (!syncEngine) return;
-          await syncEngine.processChanges(changes);
-          await syncEngine.sync();
-
-          const nameArchive = await syncEngine.exportNameArchive();
-          const updatedConfig = { ...deviceConfig, nameArchive };
-          await saveDeviceConfig(workspace, updatedConfig);
-        },
-      });
-
-      await fileWatcher.start();
-      ctx.logger.info("Started watching workspace");
     },
 
     async stop(ctx: OpenClawPluginServiceContext) {
-      if (fileWatcher) {
-        await fileWatcher.stop();
-        fileWatcher = null;
+      for (const [workspace, sync] of activeSyncers) {
+        await sync.watcher.stop();
+        ctx.logger.info(`[${sync.agentId}] Stopped syncing: ${workspace}`);
       }
-      syncEngine = null;
-      ctx.logger.info("Stopped");
+      activeSyncers.clear();
     },
   });
 
-  // Register agent tools
+  // --- Agent tools (keyed by workspace dir) ---
+
   api.registerTool({
     name: "storacha_sync_status",
     label: "Storacha Sync Status",
     description: "Get the current Storacha workspace sync status",
     parameters: { type: "object", properties: {} } as any,
-    execute: async () => {
-      if (!syncEngine) {
+    execute: async (_params: any, ctx: any) => {
+      const workspace = ctx?.workspaceDir;
+      const sync = workspace ? activeSyncers.get(workspace) : undefined;
+      if (!sync) {
         return {
           content: [
             {
               type: "text" as const,
-              text: "Sync not initialized. Run /storacha-init first, then /storacha-setup or /storacha-join.",
+              text: "Sync not active for this workspace. Set up with `openclaw clawracha init --agent <id>`.",
             },
           ],
           details: null,
         };
       }
-      const status = await syncEngine.status();
+      const status = await sync.engine.status();
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(status, null, 2) },
@@ -160,20 +200,22 @@ export default function plugin(api: OpenClawPluginApi) {
     label: "Storacha Sync Now",
     description: "Trigger an immediate workspace sync to Storacha",
     parameters: { type: "object", properties: {} } as any,
-    execute: async () => {
-      if (!syncEngine) {
+    execute: async (_params: any, ctx: any) => {
+      const workspace = ctx?.workspaceDir;
+      const sync = workspace ? activeSyncers.get(workspace) : undefined;
+      if (!sync) {
         return {
           content: [
             {
               type: "text" as const,
-              text: "Sync not initialized. Run /storacha-init first, then /storacha-setup or /storacha-join.",
+              text: "Sync not active for this workspace. Set up with `openclaw clawracha init --agent <id>`.",
             },
           ],
           details: null,
         };
       }
-      await syncEngine.sync();
-      const status = await syncEngine.status();
+      await sync.engine.sync();
+      const status = await sync.engine.status();
       return {
         content: [
           {
@@ -186,400 +228,370 @@ export default function plugin(api: OpenClawPluginApi) {
     },
   } as AnyAgentTool);
 
-  // --- Slash Commands ---
+  // --- CLI commands: openclaw clawracha <subcommand> ---
 
-  api.registerCommand({
-    name: "storacha-init",
-    description: "Generate an agent identity for Storacha sync",
-    handler: async (_ctx) => {
-      try {
-        const workspace = workspaceDir;
-        if (!workspace) return { text: "No workspace configured." };
+  api.registerCli(
+    ({ program, config }) => {
+      const clawracha = program
+        .command("clawracha")
+        .description("Storacha workspace sync commands");
 
-        // Check if already initialized
-        const existing = await loadDeviceConfig(workspace);
-        if (existing?.agentKey) {
-          const { Agent } = await import("@storacha/ucn/pail");
-          const agent = Agent.parse(existing.agentKey);
-          return {
-            text: [
-              "Agent already initialized.",
-              `Agent DID: \`${agent.did()}\``,
-              "",
-              existing.setupComplete
-                ? "Setup is complete. Use `/storacha-status` to check sync state."
-                : "**Next step — choose one:**",
-              ...(!existing.setupComplete
-                ? [
-                    "- **New workspace:** Have the space owner create an upload delegation for this DID, then run `/storacha-setup <upload-b64>`",
-                    "- **Join existing:** Have the other device run `/storacha-grant <this-DID>`, then run `/storacha-join <upload-b64> <name-b64>`",
-                  ]
-                : []),
-            ].join("\n"),
-          };
-        }
-
-        const { Agent } = await import("@storacha/ucn/pail");
-        const agent = await Agent.generate();
-        const agentKey = Agent.format(agent);
-
-        const config: DeviceConfig = { agentKey };
-        await saveDeviceConfig(workspace, config);
-
-        return {
-          text: [
-            "\u{1f525} Agent initialized!",
-            `Agent DID: \`${agent.did()}\``,
-            "",
-            "**Next step \u2014 choose one:**",
-            "- **New workspace:** Have the space owner create an upload delegation for this DID, then run `/storacha-setup <upload-b64>`",
-            "- **Join existing workspace:** Have the other device run `/storacha-grant <this-DID>`, then run `/storacha-join <upload-b64> <name-b64>`",
-          ].join("\n"),
-        };
-
-      } catch (err: any) {
-        return {
-          text: `\u274c Command failed: ${err.message}\n\`\`\`\n${err.stack ?? err}\n\`\`\``,
-        };
-      }
-},
-  });
-
-  api.registerCommand({
-    name: "storacha-setup",
-    description:
-      "Set up a NEW Storacha workspace (first device). Usage: /storacha-setup <upload-delegation-b64>",
-    acceptsArgs: true,
-    handler: async (_ctx) => {
-      try {
-        const workspace = workspaceDir;
-        if (!workspace) return { text: "No workspace configured." };
-
-        const config = await loadDeviceConfig(workspace);
-        if (!config?.agentKey) {
-          return { text: "Run `/storacha-init` first to generate an agent identity." };
-        }
-
-        if (config.setupComplete) {
-          return { text: "Setup already complete. Use `/storacha-status` to check sync state." };
-        }
-
-        const b64 = _ctx.args?.trim();
-        if (!b64) {
-          return {
-            text: [
-              "Usage: `/storacha-setup <upload-delegation-b64>`",
-              "",
-              "This creates a **new** workspace. If you're joining an existing workspace, use `/storacha-join` instead.",
-            ].join("\n"),
-          };
-        }
-
-        // Validate delegation
-        const bytes = decodeDelegation(b64);
-        const { ok: delegation, error } = await extractDelegation(bytes);
-        if (!delegation) {
-          return { text: `Invalid delegation: ${error}` };
-        }
-
-        const spaceDID = delegation.capabilities[0]?.with;
-
-        config.uploadDelegation = b64;
-        config.spaceDID = spaceDID ?? undefined;
-        config.setupComplete = true;
-        await saveDeviceConfig(workspace, config);
-
-        const { Agent } = await import("@storacha/ucn/pail");
-        const agent = Agent.parse(config.agentKey);
-
-        return {
-          text: [
-            "\u{1f525} Storacha workspace ready!",
-            `Agent DID: \`${agent.did()}\``,
-            `Space: \`${spaceDID ?? "unknown"}\``,
-            "",
-            "Restart the gateway to start syncing.",
-            "",
-            "To add another device, run `/storacha-grant <their-agent-DID>` here,",
-            "then `/storacha-join <upload-b64> <name-b64>` on the other device.",
-          ].join("\n"),
-        };
-
-      } catch (err: any) {
-        return {
-          text: `\u274c Command failed: ${err.message}\n\`\`\`\n${err.stack ?? err}\n\`\`\``,
-        };
-      }
-},
-  });
-
-  api.registerCommand({
-    name: "storacha-join",
-    description:
-      "Join an existing Storacha workspace from another device. Run /storacha-init first. Usage: /storacha-join <upload-delegation-b64> <name-delegation-b64>",
-    acceptsArgs: true,
-    handler: async (_ctx) => {
-      try {
-        const workspace = workspaceDir;
-        if (!workspace) return { text: "No workspace configured." };
-
-        const args = _ctx.args?.trim();
-        if (!args) {
-          return {
-            text: [
-              "Usage: `/storacha-join <upload-delegation-b64> <name-delegation-b64>`",
-              "",
-              "Get both delegations by running `/storacha-grant` on the existing device.",
-              "If you're setting up a **new** workspace, use `/storacha-setup` instead.",
-            ].join("\n"),
-          };
-        }
-
-        const spaceIdx = args.indexOf(" ");
-        if (spaceIdx === -1) {
-          return {
-            text: "Two arguments required: `/storacha-join <upload-b64> <name-b64>`",
-          };
-        }
-
-        const uploadB64 = args.slice(0, spaceIdx).trim();
-        const nameB64 = args.slice(spaceIdx + 1).trim();
-
-        if (!uploadB64 || !nameB64) {
-          return {
-            text: "Two arguments required: `/storacha-join <upload-b64> <name-b64>`",
-          };
-        }
-
-        // Validate upload delegation
-        const uploadBytes = decodeDelegation(uploadB64);
-        const { ok: uploadDelegation, error: uploadErr } =
-          await extractDelegation(uploadBytes);
-        if (!uploadDelegation) {
-          return { text: `Invalid upload delegation: ${uploadErr}` };
-        }
-
-        // Validate name delegation
-        const nameBytes = decodeDelegation(nameB64);
-        const { ok: nameDelegation, error: nameErr } =
-          await extractDelegation(nameBytes);
-        if (!nameDelegation) {
-          return { text: `Invalid name delegation: ${nameErr}` };
-        }
-
-        const config = await loadDeviceConfig(workspace);
-        if (!config?.agentKey) {
-          return { text: "Run `/storacha-init` first to generate an agent identity." };
-        }
-
-        if (config.setupComplete) {
-          return { text: "Setup already complete. Use `/storacha-status` to check sync state." };
-        }
-
-        const { Agent } = await import("@storacha/ucn/pail");
-        const agent = Agent.parse(config.agentKey);
-
-        const spaceDID = uploadDelegation.capabilities[0]?.with;
-
-        config.uploadDelegation = uploadB64;
-        config.nameDelegation = nameB64;
-        config.spaceDID = spaceDID ?? undefined;
-        config.setupComplete = true;
-        await saveDeviceConfig(workspace, config);
-
-        // Pull remote state immediately before watcher starts
-        let pullCount = 0;
-        try {
-          const storachaClient = await createStorachaClient(config);
-          const engine = new SyncEngine(storachaClient, workspace);
-          await engine.init(config);
-          pullCount = await engine.pullRemote();
-
-          // Save name archive after pull
-          const nameArchive = await engine.exportNameArchive();
-          config.nameArchive = nameArchive;
-          await saveDeviceConfig(workspace, config);
-        } catch (err: any) {
-          return {
-            text: [
-              "\u26a0\ufe0f Delegations saved but initial pull failed:",
-              `\`${err.message}\``,
-              "",
-              "Restart the gateway to retry.",
-            ].join("\n"),
-          };
-        }
-
-        return {
-          text: [
-            "\u{1f525} Joined existing Storacha workspace!",
-            `Agent DID: \`${agent.did()}\``,
-            `Space: \`${spaceDID ?? "unknown"}\``,
-            `Pulled ${pullCount} files from remote.`,
-            "",
-            "Restart the gateway to start syncing.",
-          ].join("\n"),
-        };
-
-      } catch (err: any) {
-        return {
-          text: `\u274c Command failed: ${err.message}\n\`\`\`\n${err.stack ?? err}\n\`\`\``,
-        };
-      }
-},
-  });
-
-  api.registerCommand({
-    name: "storacha-grant",
-    description:
-      "Grant another device access. Usage: /storacha-grant <target-DID>",
-    acceptsArgs: true,
-    handler: async (_ctx) => {
-      try {
-        const workspace = workspaceDir;
-        if (!workspace) return { text: "No workspace configured." };
-
-        const targetDID = _ctx.args?.trim() as `did:${string}:${string}`;
-        if (!targetDID || !targetDID.startsWith("did:")) {
-          return { text: "Usage: `/storacha-grant <did:key:z...>`" };
-        }
-
-        const config = await loadDeviceConfig(workspace);
-        if (!config) {
-          return {
-            text: "Not initialized. Run `/storacha-init` first.",
-          };
-        }
-
-        const results: string[] = [];
-
-        // Re-delegate upload capability
-        if (config.uploadDelegation) {
-          try {
-            const storachaClient = await createStorachaClient(config);
-            const audience = { did: () => targetDID } as any;
-            const uploadDelegation = await storachaClient.createDelegation(
-              audience,
-              [
-                "space/blob/add",
-                "space/index/add",
-                "upload/add",
-                "filecoin/offer",
-              ],
-            );
-            const { ok: archiveBytes } = await uploadDelegation.archive();
-            if (archiveBytes) {
-              const b64 = encodeDelegation(archiveBytes);
-              results.push("**Upload delegation:**\n```\n" + b64 + "\n```");
-            }
-          } catch (err: any) {
-            results.push(`\u274c Failed to create upload delegation: ${err.message}`);
-          }
-        } else {
-          results.push("\u26a0\ufe0f No upload delegation to re-delegate.");
-        }
-
-        // Re-delegate name (pail sync) capability
-        if (config.nameDelegation) {
-          try {
-            const { Agent, Name } = await import("@storacha/ucn/pail");
-            const agent = Agent.parse(config.agentKey);
-
-            let name;
-            if (config.nameArchive) {
-              const archiveBytes = decodeDelegation(config.nameArchive);
-              name = await Name.extract(agent, archiveBytes);
-            } else {
-              const nameBytes = decodeDelegation(config.nameDelegation);
-              const { ok: nameDel } = await extractDelegation(nameBytes);
-              if (!nameDel) {
-                results.push("\u274c Failed to extract name delegation.");
-              } else {
-                name = Name.from(agent, [nameDel]);
-              }
-            }
-
-            if (name) {
-              const nameDel = await name.grant(targetDID);
-              const { ok: archiveBytes } = await nameDel.archive();
-              if (archiveBytes) {
-                const b64 = encodeDelegation(archiveBytes);
-                results.push("**Name delegation:**\n```\n" + b64 + "\n```");
-              }
-            }
-          } catch (err: any) {
-            results.push(`\u274c Failed to create name delegation: ${err.message}`);
-          }
-        } else {
-          results.push("\u26a0\ufe0f No name delegation to re-delegate.");
-        }
-
-        if (results.length === 0) {
-          return { text: "Nothing to grant. Set up this device first." };
-        }
-
-        return {
-          text: [
-            `\u{1f525} Delegations for \`${targetDID}\`:`,
-            "",
-            ...results,
-            "",
-            "The target device should run:",
-            "`/storacha-join <upload-b64> <name-b64>`",
-          ].join("\n"),
-        };
-
-      } catch (err: any) {
-        return {
-          text: `\u274c Command failed: ${err.message}\n\`\`\`\n${err.stack ?? err}\n\`\`\``,
-        };
-      }
-},
-  });
-
-  api.registerCommand({
-    name: "storacha-status",
-    description: "Show Storacha sync status",
-    handler: async (_ctx) => {
-      try {
-        const workspace = workspaceDir;
-        if (!workspace) return { text: "No workspace configured." };
-
-        const config = await loadDeviceConfig(workspace);
-        if (!config)
-          return {
-            text: "Not initialized. Run `/storacha-init` first.",
-          };
-
-        const lines = [
-          "\u{1f525} Storacha Sync Status",
-          `Agent: configured`,
-          `Upload delegation: ${config.uploadDelegation ? "\u2705" : "\u274c not set"}`,
-          `Name delegation: ${config.nameDelegation ? "\u2705" : "\u274c not set"}`,
-          `Space DID: ${config.spaceDID ?? "unknown"}`,
-          `Name Archive: ${config.nameArchive ? "saved" : "not created"}`,
-          `Setup complete: ${config.setupComplete ? "\u2705" : "\u274c"}`,
-        ];
-
-        if (syncEngine) {
-          const status = await syncEngine.status();
-          lines.push(
-            `Running: ${status.running}`,
-            `Last Sync: ${
-              status.lastSync ? new Date(status.lastSync).toISOString() : "never"
-            }`,
-            `Entries: ${status.entryCount}`,
-            `Pending: ${status.pendingChanges}`,
+      // Helper to resolve workspace from --agent
+      function requireAgent(agentId: string | undefined): {
+        agentId: string;
+        workspace: string;
+      } {
+        if (!agentId) {
+          console.error(
+            "Error: --agent <id> is required. Specify which agent workspace to configure.",
           );
+          process.exit(1);
         }
-
-        return { text: lines.join("\n") };
-
-      } catch (err: any) {
         return {
-          text: `\u274c Command failed: ${err.message}\n\`\`\`\n${err.stack ?? err}\n\`\`\``,
+          agentId,
+          workspace: resolveAgentWorkspace(config, agentId),
         };
       }
-},
-  });
+
+      // --- init ---
+      clawracha
+        .command("init")
+        .description("Generate an agent identity for Storacha sync")
+        .requiredOption("--agent <id>", "Agent ID")
+        .action(async (opts: { agent: string }) => {
+          try {
+            const { agentId, workspace } = requireAgent(opts.agent);
+
+            const existing = await loadDeviceConfig(workspace);
+            if (existing?.agentKey) {
+              const { Agent } = await import("@storacha/ucn/pail");
+              const agent = Agent.parse(existing.agentKey);
+              console.log(`Agent already initialized for ${agentId}.`);
+              console.log(`Agent DID: ${agent.did()}`);
+              if (existing.setupComplete) {
+                console.log(
+                  `\nSetup is complete. Use \`openclaw clawracha status --agent ${agentId}\` to check sync state.`,
+                );
+              } else {
+                console.log("\nNext step — choose one:");
+                console.log(
+                  `  New workspace:  openclaw clawracha setup <delegation> --agent ${agentId}`,
+                );
+                console.log(
+                  `  Join existing:  openclaw clawracha join <upload> <name> --agent ${agentId}`,
+                );
+              }
+              return;
+            }
+
+            const { Agent } = await import("@storacha/ucn/pail");
+            const agent = await Agent.generate();
+            const agentKey = Agent.format(agent);
+
+            await saveDeviceConfig(workspace, { agentKey });
+
+            console.log(`🔥 Agent initialized for ${agentId}!`);
+            console.log(`Agent DID: ${agent.did()}`);
+            console.log("\nNext step — choose one:");
+            console.log(
+              `  New workspace:  openclaw clawracha setup <delegation> --agent ${agentId}`,
+            );
+            console.log(
+              `  Join existing:  openclaw clawracha join <upload> <name> --agent ${agentId}`,
+            );
+          } catch (err: any) {
+            console.error(`Error: ${err.message}`);
+            process.exit(1);
+          }
+        });
+
+      // --- setup ---
+      clawracha
+        .command("setup <delegation>")
+        .description(
+          "Set up a NEW workspace (first device). <delegation> is a file path or base64 CID string.",
+        )
+        .requiredOption("--agent <id>", "Agent ID")
+        .action(async (delegationArg: string, opts: { agent: string }) => {
+          try {
+            const { agentId, workspace } = requireAgent(opts.agent);
+
+            const deviceConfig = await loadDeviceConfig(workspace);
+            if (!deviceConfig?.agentKey) {
+              console.error(
+                `Run \`openclaw clawracha init --agent ${agentId}\` first.`,
+              );
+              process.exit(1);
+            }
+            if (deviceConfig.setupComplete) {
+              console.log("Setup already complete.");
+              return;
+            }
+
+            const delegation = await readDelegationArg(delegationArg);
+            const spaceDID = delegation.capabilities[0]?.with;
+
+            const { ok: archiveBytes } = await delegation.archive();
+            if (!archiveBytes) {
+              throw new Error("Failed to archive delegation");
+            }
+            deviceConfig.uploadDelegation = encodeDelegation(archiveBytes);
+            deviceConfig.spaceDID = spaceDID ?? undefined;
+            deviceConfig.setupComplete = true;
+            await saveDeviceConfig(workspace, deviceConfig);
+
+            const { Agent } = await import("@storacha/ucn/pail");
+            const agent = Agent.parse(deviceConfig.agentKey);
+
+            console.log(`🔥 Storacha workspace ready for ${agentId}!`);
+            console.log(`Agent DID: ${agent.did()}`);
+            console.log(`Space: ${spaceDID ?? "unknown"}`);
+            console.log(
+              "\nRestart the gateway to start syncing: `openclaw gateway restart`",
+            );
+            console.log(
+              `\nTo add another device, run \`openclaw clawracha grant <their-DID> --agent ${agentId}\` here,`,
+            );
+            console.log(
+              `then \`openclaw clawracha join <upload> <name> --agent <id>\` on the other device.`,
+            );
+          } catch (err: any) {
+            console.error(`Error: ${err.message}`);
+            process.exit(1);
+          }
+        });
+
+      // --- join ---
+      clawracha
+        .command("join <upload-delegation> <name-delegation>")
+        .description(
+          "Join an existing workspace from another device. Arguments are file paths or base64 CID strings.",
+        )
+        .requiredOption("--agent <id>", "Agent ID")
+        .action(
+          async (
+            uploadArg: string,
+            nameArg: string,
+            opts: { agent: string },
+          ) => {
+            try {
+              const { agentId, workspace } = requireAgent(opts.agent);
+
+              const deviceConfig = await loadDeviceConfig(workspace);
+              if (!deviceConfig?.agentKey) {
+                console.error(
+                  `Run \`openclaw clawracha init --agent ${agentId}\` first.`,
+                );
+                process.exit(1);
+              }
+              if (deviceConfig.setupComplete) {
+                console.log("Setup already complete.");
+                return;
+              }
+
+              const uploadDelegation = await readDelegationArg(uploadArg);
+              const nameDelegation = await readDelegationArg(nameArg);
+
+              const spaceDID = uploadDelegation.capabilities[0]?.with;
+
+              const { ok: uploadArchive } = await uploadDelegation.archive();
+              if (!uploadArchive) throw new Error("Failed to archive upload delegation");
+              const { ok: nameArchiveBytes } = await nameDelegation.archive();
+              if (!nameArchiveBytes) throw new Error("Failed to archive name delegation");
+
+              deviceConfig.uploadDelegation = encodeDelegation(uploadArchive);
+              deviceConfig.nameDelegation = encodeDelegation(nameArchiveBytes);
+              deviceConfig.spaceDID = spaceDID ?? undefined;
+              deviceConfig.setupComplete = true;
+              await saveDeviceConfig(workspace, deviceConfig);
+
+              // Pull remote state before watcher starts
+              let pullCount = 0;
+              const storachaClient = await createStorachaClient(deviceConfig);
+              const engine = new SyncEngine(storachaClient, workspace);
+              await engine.init(deviceConfig);
+              pullCount = await engine.pullRemote();
+
+              // Save name archive after pull
+              const exportedArchive = await engine.exportNameArchive();
+              deviceConfig.nameArchive = exportedArchive;
+              await saveDeviceConfig(workspace, deviceConfig);
+
+              const { Agent } = await import("@storacha/ucn/pail");
+              const agent = Agent.parse(deviceConfig.agentKey);
+
+              console.log(`🔥 Joined existing Storacha workspace for ${agentId}!`);
+              console.log(`Agent DID: ${agent.did()}`);
+              console.log(`Space: ${spaceDID ?? "unknown"}`);
+              console.log(`Pulled ${pullCount} files from remote.`);
+              console.log(
+                "\nRestart the gateway to start syncing: `openclaw gateway restart`",
+              );
+            } catch (err: any) {
+              console.error(`Error: ${err.message}`);
+              process.exit(1);
+            }
+          },
+        );
+
+      // --- grant ---
+      clawracha
+        .command("grant <target-DID>")
+        .description("Grant another device access to this workspace")
+        .requiredOption("--agent <id>", "Agent ID")
+        .action(async (targetDID: string, opts: { agent: string }) => {
+          try {
+            const { agentId, workspace } = requireAgent(opts.agent);
+
+            if (!targetDID.startsWith("did:")) {
+              console.error("Error: target must be a DID (did:key:z...)");
+              process.exit(1);
+            }
+
+            const deviceConfig = await loadDeviceConfig(workspace);
+            if (!deviceConfig) {
+              console.error(
+                `Not initialized. Run \`openclaw clawracha init --agent ${agentId}\` first.`,
+              );
+              process.exit(1);
+            }
+
+            const results: string[] = [];
+
+            // Re-delegate upload capability
+            if (deviceConfig.uploadDelegation) {
+              const storachaClient =
+                await createStorachaClient(deviceConfig);
+              const audience = {
+                did: () => targetDID as `did:${string}:${string}`,
+              } as any;
+              const uploadDel = await storachaClient.createDelegation(
+                audience,
+                [
+                  "space/blob/add",
+                  "space/index/add",
+                  "upload/add",
+                  "filecoin/offer",
+                ],
+              );
+              const { ok: archiveBytes } = await uploadDel.archive();
+              if (archiveBytes) {
+                results.push(
+                  `Upload delegation:\n${encodeDelegation(archiveBytes)}`,
+                );
+              }
+            } else {
+              results.push("⚠️ No upload delegation to re-delegate.");
+            }
+
+            // Re-delegate name capability
+            if (deviceConfig.nameDelegation) {
+              const { Agent, Name } = await import("@storacha/ucn/pail");
+              const { extract } = await import(
+                "@storacha/client/delegation"
+              );
+              const agent = Agent.parse(deviceConfig.agentKey);
+
+              let name;
+              if (deviceConfig.nameArchive) {
+                const archiveBytes = decodeDelegation(
+                  deviceConfig.nameArchive,
+                );
+                name = await Name.extract(agent, archiveBytes);
+              } else {
+                const nameBytes = decodeDelegation(
+                  deviceConfig.nameDelegation,
+                );
+                const { ok: nameDel } = await extract(nameBytes);
+                if (nameDel) {
+                  name = Name.from(agent, [nameDel]);
+                }
+              }
+
+              if (name) {
+                const nameDel = await name.grant(
+                  targetDID as `did:${string}:${string}`,
+                );
+                const { ok: archiveBytes } = await nameDel.archive();
+                if (archiveBytes) {
+                  results.push(
+                    `Name delegation:\n${encodeDelegation(archiveBytes)}`,
+                  );
+                }
+              }
+            } else {
+              results.push("⚠️ No name delegation to re-delegate.");
+            }
+
+            console.log(`🔥 Delegations for ${targetDID}:\n`);
+            for (const r of results) {
+              console.log(r);
+              console.log();
+            }
+            console.log("The target device should run:");
+            console.log(
+              `  openclaw clawracha join <upload-delegation> <name-delegation> --agent <id>`,
+            );
+            console.log(
+              "\nThen restart the gateway: `openclaw gateway restart`",
+            );
+          } catch (err: any) {
+            console.error(`Error: ${err.message}`);
+            process.exit(1);
+          }
+        });
+
+      // --- status ---
+      clawracha
+        .command("status")
+        .description("Show Storacha sync status for an agent workspace")
+        .requiredOption("--agent <id>", "Agent ID")
+        .action(async (opts: { agent: string }) => {
+          try {
+            const { agentId, workspace } = requireAgent(opts.agent);
+
+            const deviceConfig = await loadDeviceConfig(workspace);
+            if (!deviceConfig) {
+              console.log(
+                `Not initialized. Run \`openclaw clawracha init --agent ${agentId}\` first.`,
+              );
+              return;
+            }
+
+            console.log(`🔥 Storacha Sync Status [${agentId}]`);
+            console.log(`Workspace: ${workspace}`);
+            console.log(
+              `Upload delegation: ${deviceConfig.uploadDelegation ? "✅" : "❌ not set"}`,
+            );
+            console.log(
+              `Name delegation: ${deviceConfig.nameDelegation ? "✅" : "❌ not set"}`,
+            );
+            console.log(`Space DID: ${deviceConfig.spaceDID ?? "unknown"}`);
+            console.log(
+              `Name Archive: ${deviceConfig.nameArchive ? "saved" : "not created"}`,
+            );
+            console.log(
+              `Setup complete: ${deviceConfig.setupComplete ? "✅" : "❌"}`,
+            );
+
+            const sync = activeSyncers.get(workspace);
+            if (sync) {
+              const status = await sync.engine.status();
+              console.log(`Running: true`);
+              console.log(
+                `Last Sync: ${status.lastSync ? new Date(status.lastSync).toISOString() : "never"}`,
+              );
+              console.log(`Entries: ${status.entryCount}`);
+              console.log(`Pending: ${status.pendingChanges}`);
+            } else {
+              console.log(`Running: false`);
+            }
+          } catch (err: any) {
+            console.error(`Error: ${err.message}`);
+            process.exit(1);
+          }
+        });
+    },
+    { commands: ["clawracha"] },
+  );
 }
