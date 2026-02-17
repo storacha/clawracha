@@ -15,7 +15,7 @@ import type {
   OpenClawPluginServiceContext,
   AnyAgentTool,
 } from "openclaw/plugin-sdk";
-import type { DeviceConfig } from "./types/index.js";
+import type { DeviceConfig, SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
 import { FileWatcher } from "./watcher.js";
 import { createStorachaClient } from "./utils/client.js";
@@ -58,10 +58,18 @@ async function saveDeviceConfig(
  * Plugin entry — called by OpenClaw when the plugin is loaded.
  */
 export default function plugin(api: OpenClawPluginApi) {
+  // Capture plugin-specific config at registration time
+  const pluginConfig = (api.pluginConfig ?? {}) as Partial<SyncPluginConfig>;
+
   // Register background service
   api.registerService({
     id: "storacha-sync",
     async start(ctx: OpenClawPluginServiceContext) {
+      if (pluginConfig.enabled === false) {
+        ctx.logger.info("Storacha sync disabled via config.");
+        return;
+      }
+
       workspaceDir = ctx.workspaceDir;
       const workspace = workspaceDir;
       if (!workspace) {
@@ -85,8 +93,8 @@ export default function plugin(api: OpenClawPluginApi) {
         workspace,
         config: {
           enabled: true,
-          watchPatterns: ["**/*"],
-          ignorePatterns: [
+          watchPatterns: pluginConfig.watchPatterns ?? ["**/*"],
+          ignorePatterns: pluginConfig.ignorePatterns ?? [
             ".storacha/**",
             "node_modules/**",
             ".git/**",
