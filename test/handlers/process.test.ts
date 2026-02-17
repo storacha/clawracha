@@ -206,4 +206,96 @@ describe("processChanges", () => {
 
     expect(ops).toHaveLength(0);
   });
+
+  it("markdown file → mdsync v0Put (no current)", async () => {
+    await writeFile("notes.md", "# Notes\n\nHello world.\n");
+    const changes: FileChange[] = [{ type: "add", path: "notes.md" }];
+
+    const { sink, collected } = makeBlockCollector();
+    const stored: Block[] = [];
+    const store = async (block: Block) => { stored.push(block); };
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, store);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].type).toBe("put");
+    expect(ops[0].key).toBe("notes.md");
+    expect(ops[0].value).toBeDefined();
+    // Markdown blocks should be sinked for CAR upload AND stored locally
+    expect(collected.length).toBeGreaterThan(0);
+    expect(stored.length).toBeGreaterThan(0);
+    expect(collected.length).toBe(stored.length);
+  });
+
+  it("markdown file update → mdsync put (with current)", async () => {
+    const blocks = new MemoryBlockstore();
+    // Bootstrap with a markdown file via mdsync
+    const mdsync = await import("../../src/mdsync/index.js");
+    const { mdEntryCid, additions } = await mdsync.v0Put("# Old\n");
+    for (const b of additions) await blocks.put(b as any);
+
+    const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
+    const agent = await Agent.generate();
+    const name = await Name.create(agent);
+    const init = await Revision.v0Put(blocks, "readme.md", mdEntryCid);
+    await storeBlocks(blocks, init.additions);
+    await blocks.put(init.revision.event as any);
+    const { value } = await (await import("@storacha/ucn/pail/value")).from(blocks, name, init.revision);
+
+    await writeFile("readme.md", "# New\n\nUpdated content.\n");
+    const changes: FileChange[] = [{ type: "change", path: "readme.md" }];
+
+    const { sink, collected } = makeBlockCollector();
+    const stored: Block[] = [];
+    const store = async (block: Block) => { stored.push(block); };
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, store);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].type).toBe("put");
+    expect(ops[0].key).toBe("readme.md");
+    expect(collected.length).toBeGreaterThan(0);
+    expect(stored.length).toBeGreaterThan(0);
+  });
+
+  it("mixed markdown and regular files", async () => {
+    await writeFile("readme.md", "# Readme\n");
+    await writeFile("data.txt", "some data");
+    const changes: FileChange[] = [
+      { type: "add", path: "readme.md" },
+      { type: "add", path: "data.txt" },
+    ];
+
+    const { sink } = makeBlockCollector();
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink);
+
+    expect(ops).toHaveLength(2);
+    const mdOp = ops.find((o) => o.key === "readme.md");
+    const txtOp = ops.find((o) => o.key === "data.txt");
+    expect(mdOp).toBeDefined();
+    expect(mdOp!.type).toBe("put");
+    expect(txtOp).toBeDefined();
+    expect(txtOp!.type).toBe("put");
+  });
+
+  it("markdown delete → del op", async () => {
+    const blocks = new MemoryBlockstore();
+    const mdsync = await import("../../src/mdsync/index.js");
+    const { mdEntryCid, additions } = await mdsync.v0Put("# Delete me\n");
+    for (const b of additions) await blocks.put(b as any);
+
+    const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
+    const agent = await Agent.generate();
+    const name = await Name.create(agent);
+    const init = await Revision.v0Put(blocks, "delete.md", mdEntryCid);
+    await storeBlocks(blocks, init.additions);
+    await blocks.put(init.revision.event as any);
+    const { value } = await (await import("@storacha/ucn/pail/value")).from(blocks, name, init.revision);
+
+    const changes: FileChange[] = [{ type: "unlink", path: "delete.md" }];
+    const { sink } = makeBlockCollector();
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0].type).toBe("del");
+    expect(ops[0].key).toBe("delete.md");
+  });
 });

@@ -150,4 +150,33 @@ describe("applyRemoteChanges", () => {
       await gateway.close();
     }
   });
+
+  it("should resolve markdown file via mdsync instead of gateway", async () => {
+    // Set up a pail with a markdown entry
+    const { MemoryBlockstore } = await import("@storacha/ucn/block");
+    const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
+    const Value = await import("@storacha/ucn/pail/value");
+    const mdsync = await import("../../src/mdsync/index.js");
+
+    const blocks = new MemoryBlockstore();
+    const md = "# Remote Doc\n\nFrom another device.\n";
+    const { mdEntryCid, additions } = await mdsync.v0Put(md);
+    for (const b of additions) await blocks.put(b as any);
+
+    const agent = await Agent.generate();
+    const name = await Name.create(agent);
+    const rev = await Revision.v0Put(blocks, "doc.md", mdEntryCid);
+    for (const b of rev.additions) await blocks.put(b as any);
+    await blocks.put(rev.revision.event as any);
+    const { value } = await Value.from(blocks, name, rev.revision);
+
+    const entries = new Map<string, CID>([["doc.md", mdEntryCid as unknown as CID]]);
+    await applyRemoteChanges(["doc.md"], entries, tmpDir, {
+      blocks,
+      current: value,
+    });
+
+    const written = await fs.readFile(path.join(tmpDir, "doc.md"), "utf-8");
+    expect(written).toBe(md);
+  });
 });

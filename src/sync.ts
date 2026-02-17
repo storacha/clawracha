@@ -97,6 +97,7 @@ export class SyncEngine {
       this.current,
       this.blocks,
       (block) => this.carFile!.put(block),
+      (block) => this.blocks.put(block),
     );
     this.pendingOps.push(...pendingOps);
   }
@@ -195,7 +196,10 @@ export class SyncEngine {
     changedPaths: string[],
     entries: PailEntries,
   ): Promise<void> {
-    await applyRemoteChanges(changedPaths, entries, this.workspace);
+    await applyRemoteChanges(changedPaths, entries, this.workspace, {
+      blocks: this.blocks,
+      current: this.current ?? undefined,
+    });
   }
 
   async status(): Promise<SyncState> {

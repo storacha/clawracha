@@ -1,5 +1,8 @@
 /**
  * Pure function to diff file changes against pail state and produce ops.
+ *
+ * Markdown files (.md) are handled via mdsync — CRDT merge rather than
+ * whole-file UnixFS replacement. Regular files go through encodeFiles.
  */
 
 import { CID } from "multiformats/cid";
@@ -12,9 +15,17 @@ import type {
 import type { Block } from "multiformats";
 import type { FileChange, PailOp } from "../types/index.js";
 import { encodeFiles } from "../utils/encoder.js";
+import * as mdsync from "../mdsync/index.js";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
-/** Callback to persist a block (e.g. write it to a CAR file) */
+/** Callback to persist a block to the CAR file for upload. */
 export type BlockSink = (block: Block) => Promise<void>;
+
+/** Callback to persist a block to the local blockstore for future reads. */
+export type BlockStore = (block: Block) => Promise<void>;
+
+const isMarkdown = (filePath: string) => filePath.endsWith(".md");
 
 export async function processChanges(
   changes: FileChange[],
@@ -22,14 +33,16 @@ export async function processChanges(
   current: ValueView | null,
   blocks: BlockFetcher,
   sink: BlockSink,
+  store?: BlockStore,
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
-  const toEncode = changes
+  const mdChanges = changes.filter((c) => isMarkdown(c.path));
+  const regularChanges = changes.filter((c) => !isMarkdown(c.path));
+
+  // --- Regular files (UnixFS encode) ---
+  const toEncode = regularChanges
     .filter((c) => c.type !== "unlink")
-    .map((c) => c.path);
-  const toDelete = changes
-    .filter((c) => c.type === "unlink")
     .map((c) => c.path);
 
   const encoded = await encodeFiles(workspace, toEncode);
@@ -62,6 +75,35 @@ export async function processChanges(
       });
     }
   }
+
+  // --- Markdown files (CRDT merge via mdsync) ---
+  const mdPuts = mdChanges.filter((c) => c.type !== "unlink");
+  for (const change of mdPuts) {
+    const content = await fs.readFile(
+      path.join(workspace, change.path),
+      "utf-8",
+    );
+    const { mdEntryCid, additions } = current
+      ? await mdsync.put(blocks, current, change.path, content)
+      : await mdsync.v0Put(content);
+
+    // Sink blocks to CAR for upload, and store locally for future resolveValue calls.
+    for (const block of additions) {
+      await sink(block);
+      if (store) await store(block);
+    }
+
+    pendingOps.push({
+      type: "put",
+      key: change.path,
+      value: mdEntryCid as CID,
+    });
+  }
+
+  // --- Deletes (both regular and markdown) ---
+  const toDelete = changes
+    .filter((c) => c.type === "unlink")
+    .map((c) => c.path);
 
   for (const deletePath of toDelete) {
     const existing = current
