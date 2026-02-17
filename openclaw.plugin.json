@@ -1,7 +1,7 @@
 {
-  "id": "storacha-sync",
+  "id": "clawracha",
   "name": "Storacha Workspace Sync",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Sync OpenClaw workspaces to Storacha via UCN Pail",
   "entry": "./src/plugin.ts",
   "skills": [],
