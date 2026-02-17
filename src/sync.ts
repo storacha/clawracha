@@ -31,6 +31,7 @@ import { processChanges } from "./handlers/process.js";
 import { diffRemoteChanges, type PailEntries } from "./utils/differ.js";
 import { WritableCar, makeTempCar } from "./utils/tempcar.js";
 import { Client } from "@storacha/client";
+import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
 
 export class SyncEngine {
   private workspace: string;
@@ -57,12 +58,12 @@ export class SyncEngine {
 
     if (config.nameArchive) {
       // Restore from previously saved archive (has full state)
-      const archiveBytes = Buffer.from(config.nameArchive, "base64");
+      const archiveBytes = decodeDelegation(config.nameArchive);
       this.name = await Name.extract(agent, archiveBytes);
     } else if (config.nameDelegation) {
       // Reconstruct from delegation (granted by another device)
       const { extract } = await import("@storacha/client/delegation");
-      const nameBytes = Buffer.from(config.nameDelegation, "base64");
+      const nameBytes = decodeDelegation(config.nameDelegation);
       const { ok: delegation } = await extract(nameBytes);
       if (!delegation) throw new Error("Failed to extract name delegation");
       this.name = Name.from(agent, [delegation]);
@@ -247,7 +248,7 @@ export class SyncEngine {
   async exportNameArchive(): Promise<string> {
     if (!this.name) throw new Error("Sync engine not initialized");
     const bytes = await this.name.archive();
-    return Buffer.from(bytes).toString("base64");
+    return encodeDelegation(bytes);
   }
 
   private async storeBlocks(blocks: Block[]): Promise<void> {

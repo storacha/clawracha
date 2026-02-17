@@ -17,6 +17,7 @@ import type {
 } from "openclaw/plugin-sdk";
 import type { DeviceConfig, SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
+import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
 import { FileWatcher } from "./watcher.js";
 import { createStorachaClient } from "./utils/client.js";
 
@@ -267,7 +268,7 @@ export default function plugin(api: OpenClawPluginApi) {
       }
 
       // Validate delegation
-      const bytes = Buffer.from(b64, "base64");
+      const bytes = decodeDelegation(b64);
       const { ok: delegation, error } = await extractDelegation(bytes);
       if (!delegation) {
         return { text: `Invalid delegation: ${error}` };
@@ -336,7 +337,7 @@ export default function plugin(api: OpenClawPluginApi) {
       }
 
       // Validate upload delegation
-      const uploadBytes = Buffer.from(uploadB64, "base64");
+      const uploadBytes = decodeDelegation(uploadB64);
       const { ok: uploadDelegation, error: uploadErr } =
         await extractDelegation(uploadBytes);
       if (!uploadDelegation) {
@@ -344,7 +345,7 @@ export default function plugin(api: OpenClawPluginApi) {
       }
 
       // Validate name delegation
-      const nameBytes = Buffer.from(nameB64, "base64");
+      const nameBytes = decodeDelegation(nameB64);
       const { ok: nameDelegation, error: nameErr } =
         await extractDelegation(nameBytes);
       if (!nameDelegation) {
@@ -446,7 +447,7 @@ export default function plugin(api: OpenClawPluginApi) {
           );
           const { ok: archiveBytes } = await uploadDelegation.archive();
           if (archiveBytes) {
-            const b64 = Buffer.from(archiveBytes).toString("base64");
+            const b64 = encodeDelegation(archiveBytes);
             results.push("**Upload delegation:**\n```\n" + b64 + "\n```");
           }
         } catch (err: any) {
@@ -464,10 +465,10 @@ export default function plugin(api: OpenClawPluginApi) {
 
           let name;
           if (config.nameArchive) {
-            const archiveBytes = Buffer.from(config.nameArchive, "base64");
+            const archiveBytes = decodeDelegation(config.nameArchive);
             name = await Name.extract(agent, archiveBytes);
           } else {
-            const nameBytes = Buffer.from(config.nameDelegation, "base64");
+            const nameBytes = decodeDelegation(config.nameDelegation);
             const { ok: nameDel } = await extractDelegation(nameBytes);
             if (!nameDel) {
               results.push("\u274c Failed to extract name delegation.");
@@ -480,7 +481,7 @@ export default function plugin(api: OpenClawPluginApi) {
             const nameDel = await name.grant(targetDID);
             const { ok: archiveBytes } = await nameDel.archive();
             if (archiveBytes) {
-              const b64 = Buffer.from(archiveBytes).toString("base64");
+              const b64 = encodeDelegation(archiveBytes);
               results.push("**Name delegation:**\n```\n" + b64 + "\n```");
             }
           }

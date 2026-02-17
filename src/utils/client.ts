@@ -9,6 +9,7 @@ import { Agent as PailAgent } from "@storacha/ucn/pail";
 import { create as createClient } from "@storacha/client";
 import { StoreMemory } from "@storacha/client/stores/memory";
 import { extract } from "@storacha/client/delegation";
+import { decodeDelegation } from "./delegation.js";
 import type { DeviceConfig } from "../types/index.js";
 import type { Client } from "@storacha/client";
 
@@ -31,7 +32,7 @@ export async function createStorachaClient(
   });
 
   // Import the upload delegation (space → agent)
-  const uploadBytes = Buffer.from(config.uploadDelegation, "base64");
+  const uploadBytes = decodeDelegation(config.uploadDelegation);
   const { ok: uploadDelegation, error: uploadErr } =
     await extract(uploadBytes);
   if (!uploadDelegation) {
