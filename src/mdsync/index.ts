@@ -18,13 +18,11 @@ import {
   BlockFetcher,
   EventLink,
   Operation,
-  RevisionView,
   ValueView,
 } from "@storacha/ucn/pail/api";
 import * as CRDT from "@web3-storage/pail/crdt";
 import { Block, CID } from "multiformats";
 import * as cbor from "@ipld/dag-cbor";
-import * as Revision from "@storacha/ucn/pail/revision";
 import {
   fromMarkdown,
   encodeTree,
@@ -107,12 +105,6 @@ interface MarkdownEntryUpdate extends MarkdownEntryBase {
   type: "update";
   /** CID of the DAG-CBOR encoded RGAChangeSet applied in this event. */
   changeset: CID;
-}
-
-interface RevisionResult {
-  revision: RevisionView;
-  additions: Block[];
-  removals: Block[];
 }
 
 /** Serialized form stored at each Pail key — CID pointers to the actual data blocks. */
@@ -207,20 +199,13 @@ const firstPut = async (
 
 /**
  * First put into an empty Pail (v0 = no existing revision).
- * Creates the initial revision with a single markdown entry.
+ * Returns the markdown entry CID and blocks to store. Caller is
+ * responsible for creating the Pail revision via Revision.v0Put.
  */
 export const v0Put = async (
-  blocks: BlockFetcher,
-  key: string,
   newMarkdown: string,
-): Promise<RevisionResult> => {
-  const { mdEntryCid, additions } = await firstPut(newMarkdown, []);
-  const revisionResult = await Revision.v0Put(blocks, key, mdEntryCid);
-  return {
-    revision: revisionResult.revision,
-    additions: [...additions, ...revisionResult.additions],
-    removals: [...revisionResult.removals],
-  };
+): Promise<MarkdownResult> => {
+  return firstPut(newMarkdown, []);
 };
 
 /**
@@ -230,26 +215,23 @@ export const v0Put = async (
  * resolves the current value (merging concurrent heads if needed), computes
  * an RGA changeset against the resolved tree, applies it, and stores the
  * updated entry.
+ *
+ * Returns the markdown entry CID and blocks to store. Caller is
+ * responsible for creating the Pail revision via Revision.put.
  */
 export const put = async (
   blocks: BlockFetcher,
   current: ValueView,
   key: string,
   newMarkdown: string,
-): Promise<RevisionResult> => {
+): Promise<MarkdownResult> => {
   const mdEntry = await resolveValue(blocks, current, key);
   if (!mdEntry) {
     // Key doesn't exist yet — bootstrap with firstPut.
-    const { mdEntryCid, additions } = await firstPut(
+    return firstPut(
       newMarkdown,
       current.revision.map((r) => r.event.cid),
     );
-    const revisionResult = await Revision.put(blocks, current, key, mdEntryCid);
-    return {
-      revision: revisionResult.revision,
-      additions: [...additions, ...revisionResult.additions],
-      removals: [...revisionResult.removals],
-    };
   }
   const { events: eventRGA, root: rgaRoot } = mdEntry;
 
@@ -267,22 +249,12 @@ export const put = async (
   const comparator = makeComparator(eventRGA);
   const newRoot = applyRGAChangeSet(rgaRoot, changeset, comparator);
 
-  const newMDEntry: DeserializedMarkdownEntry = {
+  return serializeMarkdownEntry({
     type: "update",
     root: newRoot,
     events: eventRGA,
     changeset,
-  };
-  const { mdEntryCid, additions } = await serializeMarkdownEntry(newMDEntry);
-  const revisionResult = await Revision.put(blocks, current, key, mdEntryCid);
-  return {
-    revision: revisionResult.revision,
-    additions: [
-      ...additions,
-      ...revisionResult.additions,
-    ],
-    removals: [...revisionResult.removals],
-  };
+  });
 };
 
 // ---- Block fetching helpers ----
