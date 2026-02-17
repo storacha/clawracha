@@ -21,14 +21,41 @@ openclaw plugins install @storacha/clawracha
 
 ## Setup
 
+Setup is done via slash commands in your chat session with the agent (not CLI commands).
+
+### New workspace (first device)
+
+```
+/storacha-init <upload-delegation-b64>
+```
+
+Creates a fresh workspace with a new UCN Name. You'll need an upload delegation from a Storacha space owner.
+
+### Join an existing workspace (additional devices)
+
+```
+/storacha-join <upload-delegation-b64> <name-delegation-b64>
+```
+
+Joins an existing workspace from another device. Both delegations are required — get them by running `/storacha-grant` on the existing device. The join command pulls all remote files before the watcher starts, so your local workspace is fully synced from the start.
+
+### Grant access to another device
+
+```
+/storacha-grant <target-agent-DID>
+```
+
+Generates upload and name delegations for the target device. The target device uses these with `/storacha-join`.
+
+### Check status
+
+```
+/storacha-status
+```
+
+After setup, restart the gateway to start syncing:
+
 ```bash
-# Initialize sync for this workspace
-openclaw storacha init
-
-# Import a delegation from a space owner
-openclaw storacha delegate <base64-delegation>
-
-# Restart gateway to start syncing
 openclaw gateway restart
 ```
 
@@ -108,7 +135,7 @@ The plugin provides tools for manual sync control:
 
 The plugin stores data in `.storacha/` within the workspace:
 
-- `config.json` - Agent key, delegation, name archive (NOT synced)
+- `config.json` - Agent key, delegations, name archive (NOT synced)
 - `blocks/` - Local block cache (NOT synced)
 
 Add `.storacha/` to your `.gitignore`.
