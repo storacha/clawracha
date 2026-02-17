@@ -16,7 +16,7 @@
       "watchPatterns": {
         "type": "array",
         "items": { "type": "string" },
-        "default": ["**/*.md"],
+        "default": ["**/*"],
         "description": "Glob patterns to watch for sync"
       },
       "ignorePatterns": {

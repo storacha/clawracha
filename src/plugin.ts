@@ -104,7 +104,7 @@ export default function plugin(api: OpenClawPluginApi) {
         },
       });
 
-      fileWatcher.start();
+      await fileWatcher.start();
       ctx.logger.info("Started watching workspace");
     },
 
