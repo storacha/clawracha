@@ -21,6 +21,7 @@ async function initPail(blocks: TestBlockstore, key: string, md: string) {
   await blocks.putMany(additions);
   const rev = await Revision.v0Put(blocks, key, mdEntryCid);
   await blocks.putMany(rev.additions);
+  await blocks.put(rev.revision.event);
   const { value } = await Value.from(blocks, mockName, rev.revision);
   return value;
 }
@@ -36,6 +37,7 @@ async function updatePail(
   await blocks.putMany(additions);
   const rev = await Revision.put(blocks, current, key, mdEntryCid);
   await blocks.putMany(rev.additions);
+  await blocks.put(rev.revision.event);
   const { value } = await Value.from(blocks, mockName, rev.revision);
   return value;
 }
@@ -79,5 +81,40 @@ describe("mdsync", () => {
 
     const retrieved = await mdsync.get(blocks, v3, "doc.md");
     expect(retrieved).toBe("# V3\n\nNew paragraph.\n\nAnother one.\n");
+  });
+
+  it("resolves concurrent edits from two heads", async () => {
+    const blocks = new TestBlockstore();
+
+    // Common ancestor
+    const v0 = await initPail(blocks, "doc.md", "# Doc\n\nOriginal.\n");
+
+    // Two concurrent edits branching from v0
+    const { mdEntryCid: cid1, additions: a1 } = await mdsync.put(
+      blocks, v0, "doc.md", "# Doc\n\nOriginal.\n\nFrom replica 1.\n",
+    );
+    await blocks.putMany(a1);
+    const rev1 = await Revision.put(blocks, v0, "doc.md", cid1);
+    await blocks.putMany(rev1.additions);
+    await blocks.put(rev1.revision.event);
+
+    const { mdEntryCid: cid2, additions: a2 } = await mdsync.put(
+      blocks, v0, "doc.md", "# Doc\n\nOriginal.\n\nFrom replica 2.\n",
+    );
+    await blocks.putMany(a2);
+    const rev2 = await Revision.put(blocks, v0, "doc.md", cid2);
+    await blocks.putMany(rev2.additions);
+    await blocks.put(rev2.revision.event);
+
+    // Merge: ValueView with both heads
+    const { value: merged } = await Value.from(
+      blocks, mockName, rev1.revision, rev2.revision,
+    );
+
+    const result = await mdsync.get(blocks, merged, "doc.md");
+    expect(result).toBeDefined();
+    // Both edits should be present in the resolved document
+    expect(result).toContain("From replica 1.");
+    expect(result).toContain("From replica 2.");
   });
 });
