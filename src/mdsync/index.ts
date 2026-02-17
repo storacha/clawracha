@@ -70,6 +70,7 @@ class MarkdownEvent {
 
 /** Deserialize a MarkdownEvent from its string representation (comma-separated CIDs). */
 const parseMarkdownEvent = (str: string): MarkdownEvent => {
+  if (!str) return new MarkdownEvent([]);
   const parentStrs = str.split(",");
   const parents = parentStrs.map((s) => CID.parse(s) as EventLink);
   return new MarkdownEvent(parents);
