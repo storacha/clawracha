@@ -3,7 +3,7 @@
   "name": "Storacha Workspace Sync",
   "version": "0.0.3",
   "description": "Sync OpenClaw workspaces to Storacha via UCN Pail",
-  "entry": "./src/plugin.ts",
+  "entry": "./dist/plugin.js",
   "skills": [],
   "configSchema": {
     "type": "object",

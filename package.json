@@ -13,7 +13,7 @@
   "types": "dist/plugin.d.ts",
   "openclaw": {
     "extensions": [
-      "./src/plugin.ts"
+      "./dist/plugin.js"
     ]
   },
   "scripts": {
