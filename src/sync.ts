@@ -130,8 +130,7 @@ export class SyncEngine {
 
     const beforeEntries = await this.getPailEntries();
 
-    let pendingOps = this.pendingOps;
-    if (pendingOps.length === 0) {
+    if (this.pendingOps.length === 0) {
       // No pending ops — just pull remote
       try {
         const result = await Revision.resolve(this.blocks, name, {
@@ -143,29 +142,35 @@ export class SyncEngine {
         if (!(err instanceof NoValueError)) throw err;
       }
     } else {
-      while (pendingOps.length > 0) {
-        if (!this.carFile) {
-          throw new Error("CAR file not initialized");
+      let pendingOps = [...this.pendingOps];
+      this.pendingOps = [];
+      try {
+        while (pendingOps.length > 0) {
+          if (!this.carFile) {
+            throw new Error("CAR file not initialized");
+          }
+          const { current, revisionBlocks, event, remainingOps } =
+            await applyPendingOps(this.blocks, name, this.current, pendingOps);
+          this.current = current;
+          for (const block of revisionBlocks) {
+            await this.carFile.put(block);
+          }
+          await this.storeBlocks(revisionBlocks);
+          if (event) {
+            await this.carFile.put(event);
+            await this.storeBlocks([event]);
+          }
+          pendingOps = remainingOps;
+          await this.possiblyUploadCAR();
+          if (pendingOps.length > 0) {
+            this.carFile = await makeTempCar();
+          }
         }
-        const { current, revisionBlocks, event, remainingOps } =
-          await applyPendingOps(this.blocks, name, this.current, pendingOps);
-        this.current = current;
-        for (const block of revisionBlocks) {
-          await this.carFile.put(block);
-        }
-        await this.storeBlocks(revisionBlocks);
-        if (event) {
-          await this.carFile.put(event);
-          await this.storeBlocks([event]);
-        }
-        pendingOps = remainingOps;
-        await this.possiblyUploadCAR();
-        if (pendingOps.length > 0) {
-          this.carFile = await makeTempCar();
-        }
+      } catch (err) {
+        this.pendingOps.unshift(...pendingOps);
+        throw err;
       }
     }
-    this.pendingOps = [];
 
     // Apply remote changes
     const afterEntries = await this.getPailEntries();
