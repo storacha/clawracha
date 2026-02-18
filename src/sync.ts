@@ -187,9 +187,7 @@ export class SyncEngine {
       this.carFile = null;
       if (readableCar) {
         try {
-          console.debug("Uploading CAR with revision blocks...");
           await storachaClient.uploadCAR(readableCar.readable);
-          console.debug("Upload complete");
         } finally {
           await readableCar.cleanup();
         }

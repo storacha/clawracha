@@ -33,7 +33,7 @@ export const makeTempCar = async (): Promise<WritableCar> => {
 
   // CarWriter.createAppender() creates a headerless/rootless CAR
   // which is fine for uploadCAR (the client handles it)
-  const { writer, out } = CarWriter.createAppender();
+  const { writer, out } = CarWriter.create();
 
   // Pipe the output to a file
   const fsWriteStream = createWriteStream(file);
@@ -62,9 +62,9 @@ export const makeTempCar = async (): Promise<WritableCar> => {
       return {
         readable: {
           stream: () =>
-            stream.Readable.toWeb(createReadStream(file)) as unknown as ReadableStream<
-              Uint8Array<ArrayBuffer>
-            >,
+            stream.Readable.toWeb(
+              createReadStream(file),
+            ) as unknown as ReadableStream<Uint8Array<ArrayBuffer>>,
         },
         cleanup,
       };
