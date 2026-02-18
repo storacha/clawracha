@@ -638,6 +638,51 @@ export default function plugin(api: OpenClawPluginApi) {
             process.exit(1);
           }
         });
+      // --- inspect ---
+      clawracha
+        .command("inspect")
+        .description("Inspect internal sync state for debugging")
+        .requiredOption("--agent <id>", "Agent ID")
+        .action(async (opts: { agent: string }) => {
+          try {
+            const { agentId, workspace } = requireAgent(opts.agent);
+
+            const deviceConfig = await loadDeviceConfig(workspace);
+            if (!deviceConfig?.agentKey || !deviceConfig.setupComplete) {
+              console.log(
+                `Not set up. Run \`openclaw clawracha init --agent ${agentId}\` first.`,
+              );
+              return;
+            }
+
+            // Spin up a temporary engine to inspect state
+            const storachaClient = await createStorachaClient(deviceConfig);
+            const engine = new SyncEngine(storachaClient, workspace);
+            await engine.init(deviceConfig);
+
+            const state = await engine.inspect();
+
+            console.log(`🔥 Storacha Inspect [${agentId}]`);
+            console.log(`Workspace: ${workspace}`);
+            console.log(`Running: ${state.running}`);
+            console.log(`Root CID: ${state.root ?? "(none)"}`);
+            console.log(`Revisions: ${state.revisions.length}`);
+            for (const r of state.revisions) {
+              console.log(`  event: ${r.event}`);
+            }
+            console.log(`\nPail entries (${state.pailKeys.length}):`);
+            for (const key of state.pailKeys) {
+              console.log(`  ${key}`);
+            }
+            console.log(`\nPending ops (${state.pendingOps.length}):`);
+            for (const op of state.pendingOps) {
+              console.log(`  ${op.type} ${op.key}${op.value ? ` → ${op.value}` : ""}`);
+            }
+          } catch (err: any) {
+            console.error(`Error: ${err.message}`);
+            process.exit(1);
+          }
+        });
     },
     { commands: ["clawracha"] },
   );

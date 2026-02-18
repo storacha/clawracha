@@ -243,6 +243,32 @@ export class SyncEngine {
     return entries.size;
   }
 
+  /**
+   * Inspect internal state for debugging.
+   */
+  async inspect(): Promise<{
+    root: string | null;
+    revisions: { event: string }[];
+    pailKeys: string[];
+    pendingOps: { type: string; key: string; value?: string }[];
+    running: boolean;
+  }> {
+    const entries = await this.getPailEntries();
+    return {
+      root: this.current?.root?.toString() ?? null,
+      revisions: this.current?.revision?.map((r) => ({
+        event: r.event.cid.toString(),
+      })) ?? [],
+      pailKeys: [...entries.keys()],
+      pendingOps: this.pendingOps.map((op) => ({
+        type: op.type,
+        key: op.key,
+        value: op.value?.toString(),
+      })),
+      running: this.running,
+    };
+  }
+
   async status(): Promise<SyncState> {
     const entries = await this.getPailEntries();
     return {
