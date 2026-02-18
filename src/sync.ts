@@ -83,6 +83,8 @@ export class SyncEngine {
         throw err;
       }
     }
+
+    this.running = true;
   }
 
   /**
@@ -203,6 +205,13 @@ export class SyncEngine {
     });
   }
 
+
+  /**
+   * Mark the engine as stopped.
+   */
+  stop(): void {
+    this.running = false;
+  }
 
   /**
    * Pull all remote state and write to local filesystem.

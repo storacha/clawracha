@@ -171,6 +171,7 @@ export default function plugin(api: OpenClawPluginApi) {
 
     async stop(ctx: OpenClawPluginServiceContext) {
       for (const [workspace, sync] of activeSyncers) {
+        sync.engine.stop();
         await sync.watcher.stop();
         ctx.logger.info(`[${sync.agentId}] Stopped syncing: ${workspace}`);
       }
