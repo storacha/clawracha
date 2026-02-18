@@ -56,7 +56,10 @@ export async function applyPendingOps(
 
       console.debug(
         "publishing v0Put revision",
-        JSON.stringify(result.revision, null, 2),
+        "cid:",
+        result.revision.event.cid.toString(),
+        "value:",
+        JSON.stringify(result.revision.event.value, null, 2),
       );
       console.debug(
         "v0Put additions:",
@@ -68,7 +71,14 @@ export async function applyPendingOps(
       });
       console.debug(
         "published v0Put revision",
-        JSON.stringify(pubResult, null, 2),
+        "root:",
+        pubResult.value.root.toString(),
+        "revision:",
+        JSON.stringify(
+          pubResult.value.revision.map((r) => r.event.value),
+          null,
+          2,
+        ),
       );
       accumulate(pubResult.additions);
       current = pubResult.value;
