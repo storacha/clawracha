@@ -47,6 +47,7 @@ export class SyncEngine {
   private pendingOps: PailOp[] = [];
   private carFile: WritableCar | null = null;
   private lastSync: number | null = null;
+  private syncLock: Promise<void> = Promise.resolve();
 
   constructor(workspace: string) {
     this.workspace = workspace;
@@ -126,6 +127,12 @@ export class SyncEngine {
    * Execute sync: generate revision, publish, upload, apply remote changes.
    */
   async sync(): Promise<void> {
+    const op = this.syncLock.then(() => this._syncInner());
+    this.syncLock = op.catch(() => {}); // heal chain so subsequent syncs run
+    return op;
+  }
+
+  private async _syncInner(): Promise<void> {
     const { name } = this.requireRunning();
 
     const beforeEntries = await this.getPailEntries();
