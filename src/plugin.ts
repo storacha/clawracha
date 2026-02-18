@@ -396,9 +396,6 @@ export default function plugin(api: OpenClawPluginApi) {
             console.log(`Agent DID: ${agent.did()}`);
             console.log(`Space: ${spaceDID ?? "unknown"}`);
             console.log(
-              "\nRestart the gateway to start syncing: `openclaw gateway restart`",
-            );
-            console.log(
               `\nTo add another device, run \`openclaw clawracha grant <their-DID> --agent ${agentId}\` here,`,
             );
             console.log(
@@ -485,9 +482,7 @@ export default function plugin(api: OpenClawPluginApi) {
               console.log(`Agent DID: ${agent.did()}`);
               console.log(`Space: ${spaceDID ?? "unknown"}`);
               console.log(`Pulled ${pullCount} files from remote.`);
-              console.log(
-                "\nRestart the gateway to start syncing: `openclaw gateway restart`",
-              );
+              console.log("\nSync is now active (no gateway restart needed).");
             } catch (err: any) {
               if (engine) {
                 try {
@@ -593,9 +588,7 @@ export default function plugin(api: OpenClawPluginApi) {
             console.log(
               `  openclaw clawracha join <upload-delegation> <name-delegation> --agent <id>`,
             );
-            console.log(
-              "\nThen restart the gateway: `openclaw gateway restart`",
-            );
+
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
             process.exit(1);
