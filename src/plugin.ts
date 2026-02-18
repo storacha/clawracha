@@ -74,8 +74,7 @@ async function startWorkspaceSync(
     return null;
   }
 
-  const storachaClient = await createStorachaClient(deviceConfig);
-  const engine = new SyncEngine(storachaClient, workspace);
+  const engine = new SyncEngine(workspace);
   await engine.init(deviceConfig);
 
   const watcher = new FileWatcher({
@@ -356,8 +355,7 @@ export default function plugin(api: OpenClawPluginApi) {
             await saveDeviceConfig(workspace, deviceConfig);
 
             // Initial upload: scan all existing workspace files and sync to Storacha
-            const storachaClient = await createStorachaClient(deviceConfig);
-            const engine = new SyncEngine(storachaClient, workspace);
+            const engine = new SyncEngine(workspace);
             await engine.init(deviceConfig);
 
             const userIgnored = await readIgnoreFile(workspace);
@@ -405,6 +403,7 @@ export default function plugin(api: OpenClawPluginApi) {
             console.log(
               `then \`openclaw clawracha join <upload> <name> --agent <id>\` on the other device.`,
             );
+            console.log("\nSync is now active (no gateway restart needed).");
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
             process.exit(1);
@@ -459,8 +458,7 @@ export default function plugin(api: OpenClawPluginApi) {
 
               // Pull remote state before watcher starts
               let pullCount = 0;
-              const storachaClient = await createStorachaClient(deviceConfig);
-              const engine = new SyncEngine(storachaClient, workspace);
+              const engine = new SyncEngine(workspace);
               await engine.init(deviceConfig);
               pullCount = await engine.pullRemote();
 
@@ -655,10 +653,15 @@ export default function plugin(api: OpenClawPluginApi) {
               return;
             }
 
-            // Spin up a temporary engine to inspect state
-            const storachaClient = await createStorachaClient(deviceConfig);
-            const engine = new SyncEngine(storachaClient, workspace);
-            await engine.init(deviceConfig);
+            // Use active syncer if available, otherwise spin up temporary engine
+            let engine: SyncEngine;
+            const activeSync = activeSyncers.get(workspace);
+            if (activeSync) {
+              engine = activeSync.engine;
+            } else {
+              engine = new SyncEngine(workspace);
+              await engine.init(deviceConfig);
+            }
 
             const state = await engine.inspect();
 

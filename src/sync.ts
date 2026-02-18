@@ -31,49 +31,57 @@ import { processChanges } from "./handlers/process.js";
 import { diffRemoteChanges, type PailEntries } from "./utils/differ.js";
 import { WritableCar, makeTempCar } from "./utils/tempcar.js";
 import { Client } from "@storacha/client";
+import { createStorachaClient } from "./utils/client.js";
 import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
+
+/** Engine is either stopped or running with a name and client. */
+type State =
+  | { running: false }
+  | { running: true; name: NameView; storachaClient: Client };
 
 export class SyncEngine {
   private workspace: string;
   private blocks: WorkspaceBlockstore;
-  private name: NameView | null = null;
+  private state: State = { running: false };
   private current: ValueView | null = null;
   private pendingOps: PailOp[] = [];
   private carFile: WritableCar | null = null;
-  private running = false;
   private lastSync: number | null = null;
-  private storachaClient: Client;
 
-  constructor(storachaClient: Client, workspace: string) {
-    this.storachaClient = storachaClient;
+  constructor(workspace: string) {
     this.workspace = workspace;
     this.blocks = createWorkspaceBlockstore(workspace);
   }
 
   /**
-   * Initialize sync engine with device config
+   * Initialize sync engine with device config.
+   * Creates the Storacha client and resolves the UCN name.
    */
   async init(config: DeviceConfig): Promise<void> {
+    const storachaClient = await createStorachaClient(config);
     const agent = Agent.parse(config.agentKey);
 
+    let name: NameView;
     if (config.nameArchive) {
       // Restore from previously saved archive (has full state)
       const archiveBytes = decodeDelegation(config.nameArchive);
-      this.name = await Name.extract(agent, archiveBytes);
+      name = await Name.extract(agent, archiveBytes);
     } else if (config.nameDelegation) {
       // Reconstruct from delegation (granted by another device)
       const { extract } = await import("@storacha/client/delegation");
       const nameBytes = decodeDelegation(config.nameDelegation);
       const { ok: delegation } = await extract(nameBytes);
       if (!delegation) throw new Error("Failed to extract name delegation");
-      this.name = Name.from(agent, [delegation]);
+      name = Name.from(agent, [delegation]);
     } else {
       // First device — create a new name
-      this.name = await Name.create(agent);
+      name = await Name.create(agent);
     }
 
+    this.state = { running: true, name, storachaClient };
+
     try {
-      const result = await Revision.resolve(this.blocks, this.name);
+      const result = await Revision.resolve(this.blocks, name);
       this.current = result.value;
       await this.storeBlocks(result.additions);
     } catch (err) {
@@ -83,12 +91,21 @@ export class SyncEngine {
         throw err;
       }
     }
-
-    this.running = true;
   }
 
   /**
-   * Process a batch of file changes
+   * Require running state or throw.
+   */
+  private requireRunning(): { name: NameView; storachaClient: Client } {
+    if (!this.state.running) {
+      throw new Error("Sync engine not initialized");
+    }
+    return this.state;
+  }
+
+  /**
+   * Process a batch of file changes.
+   * Can be called even when not running (accumulates pending ops).
    */
   async processChanges(changes: FileChange[]): Promise<void> {
     if (!this.carFile) {
@@ -106,12 +123,10 @@ export class SyncEngine {
   }
 
   /**
-   * Execute sync: generate revision, publish, upload, apply remote changes
+   * Execute sync: generate revision, publish, upload, apply remote changes.
    */
   async sync(): Promise<void> {
-    if (!this.name) {
-      throw new Error("Sync engine not initialized");
-    }
+    const { name } = this.requireRunning();
 
     const beforeEntries = await this.getPailEntries();
 
@@ -121,7 +136,7 @@ export class SyncEngine {
       }
       const result = await applyPendingOps(
         this.blocks,
-        this.name,
+        name,
         this.current,
         this.pendingOps,
       );
@@ -133,7 +148,7 @@ export class SyncEngine {
     } else {
       // No pending ops — just pull remote
       try {
-        const result = await Revision.resolve(this.blocks, this.name, {
+        const result = await Revision.resolve(this.blocks, name, {
           base: this.current ?? undefined,
         });
         await this.storeBlocks(result.additions);
@@ -159,15 +174,16 @@ export class SyncEngine {
   }
 
   /**
-   * Create CAR and upload to Storacha
+   * Create CAR and upload to Storacha.
    */
   private async possiblyUploadCAR(): Promise<void> {
     if (this.carFile) {
+      const { storachaClient } = this.requireRunning();
       const readableCar = await this.carFile.switchToReadable();
       this.carFile = null;
       if (readableCar) {
         try {
-          await this.storachaClient.uploadCAR(readableCar.readable);
+          await storachaClient.uploadCAR(readableCar.readable);
         } finally {
           await readableCar.cleanup();
         }
@@ -176,7 +192,7 @@ export class SyncEngine {
   }
 
   /**
-   * Get current pail entries as map
+   * Get current pail entries as map.
    */
   async getPailEntries(): Promise<PailEntries> {
     const entries: PailEntries = new Map();
@@ -193,7 +209,7 @@ export class SyncEngine {
   }
 
   /**
-   * Apply remote changes to local filesystem
+   * Apply remote changes to local filesystem.
    */
   private async applyRemoteChanges(
     changedPaths: string[],
@@ -205,23 +221,22 @@ export class SyncEngine {
     });
   }
 
-
   /**
    * Mark the engine as stopped.
    */
   stop(): void {
-    this.running = false;
+    this.state = { running: false };
   }
 
   /**
    * Pull all remote state and write to local filesystem.
-   * Used by /storacha-join to overwrite local with remote before watcher starts.
+   * Used by join to overwrite local with remote before watcher starts.
    */
   async pullRemote(): Promise<number> {
-    if (!this.name) throw new Error("Sync engine not initialized");
+    const { name } = this.requireRunning();
 
     try {
-      const result = await Revision.resolve(this.blocks, this.name, {
+      const result = await Revision.resolve(this.blocks, name, {
         base: this.current ?? undefined,
       });
       await this.storeBlocks(result.additions);
@@ -265,14 +280,14 @@ export class SyncEngine {
         key: op.key,
         value: op.value?.toString(),
       })),
-      running: this.running,
+      running: this.state.running,
     };
   }
 
   async status(): Promise<SyncState> {
     const entries = await this.getPailEntries();
     return {
-      running: this.running,
+      running: this.state.running,
       lastSync: this.lastSync,
       root: this.current?.root ?? null,
       entryCount: entries.size,
@@ -281,8 +296,8 @@ export class SyncEngine {
   }
 
   async exportNameArchive(): Promise<string> {
-    if (!this.name) throw new Error("Sync engine not initialized");
-    const bytes = await this.name.archive();
+    const { name } = this.requireRunning();
+    const bytes = await name.archive();
     return encodeDelegation(bytes);
   }
 
