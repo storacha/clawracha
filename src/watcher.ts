@@ -15,6 +15,7 @@ export interface WatcherOptions {
   config: SyncPluginConfig;
   onChanges: (changes: FileChange[]) => Promise<void>;
   debounceMs?: number;
+  initialAdd?: boolean; // Whether to emit "add" events for existing files on startup
 }
 
 export class FileWatcher {
@@ -53,7 +54,7 @@ export class FileWatcher {
     this.watcher = chokidar.watch(watchPaths, {
       ignored,
       persistent: true,
-      ignoreInitial: true,
+      ignoreInitial: !this.options.initialAdd,
       awaitWriteFinish: {
         stabilityThreshold: 200,
         pollInterval: 100,
@@ -87,7 +88,7 @@ export class FileWatcher {
    */
   private handleChange(
     type: "add" | "change" | "unlink",
-    filePath: string
+    filePath: string,
   ): void {
     const relativePath = path.relative(this.options.workspace, filePath);
 

@@ -24,7 +24,8 @@ import {
   readDelegationArg,
 } from "./utils/delegation.js";
 import { resolveAgentWorkspace, getAgentIds } from "./utils/workspace.js";
-import { readIgnoreFile } from "./utils/ignore.js";
+import { Agent, Name } from "@storacha/ucn/pail";
+import { extract } from "@storacha/client/delegation";
 
 // Per-workspace sync state
 interface WorkspaceSync {
@@ -67,13 +68,13 @@ async function startWorkspaceSync(
   workspace: string,
   agentId: string,
   pluginConfig: Partial<SyncPluginConfig>,
+  initialAdd: boolean,
   logger: { info: (msg: string) => void; warn: (msg: string) => void },
 ): Promise<WorkspaceSync | null> {
   const deviceConfig = await loadDeviceConfig(workspace);
   if (!deviceConfig || !deviceConfig.setupComplete) {
     return null;
   }
-
   const engine = new SyncEngine(workspace);
   await engine.init(deviceConfig);
 
@@ -97,30 +98,13 @@ async function startWorkspaceSync(
       const updatedConfig = { ...deviceConfig, nameArchive };
       await saveDeviceConfig(workspace, updatedConfig);
     },
+    initialAdd,
   });
 
   await watcher.start();
   logger.info(`[${agentId}] Started syncing workspace: ${workspace}`);
 
   return { engine, watcher, workspace, agentId };
-}
-
-/**
- * Scan workspace for files, excluding patterns.
- * Returns paths relative to workspace.
- */
-async function scanWorkspaceFiles(
-  workspace: string,
-  ignorePatterns: string[],
-): Promise<string[]> {
-  const { glob } = await import("glob");
-  return glob("**/*", {
-    cwd: workspace,
-    nodir: true,
-    ignore: ignorePatterns.map((p) =>
-      p.includes("/") || p.includes("*") ? p : `${p}/**`,
-    ),
-  });
 }
 
 // --- Plugin entry ---
@@ -147,6 +131,7 @@ export default function plugin(api: OpenClawPluginApi) {
             workspace,
             agentId,
             pluginConfig,
+            false, // Don't emit "add" events for existing files on startup (handled by initial scan)
             ctx.logger,
           );
           if (sync) {
@@ -278,7 +263,6 @@ export default function plugin(api: OpenClawPluginApi) {
 
             const existing = await loadDeviceConfig(workspace);
             if (existing?.agentKey) {
-              const { Agent } = await import("@storacha/ucn/pail");
               const agent = Agent.parse(existing.agentKey);
               console.log(`Agent already initialized for ${agentId}.`);
               console.log(`Agent DID: ${agent.did()}`);
@@ -298,7 +282,6 @@ export default function plugin(api: OpenClawPluginApi) {
               return;
             }
 
-            const { Agent } = await import("@storacha/ucn/pail");
             const agent = await Agent.generate();
             const agentKey = Agent.format(agent);
 
@@ -328,7 +311,6 @@ export default function plugin(api: OpenClawPluginApi) {
         )
         .requiredOption("--agent <id>", "Agent ID")
         .action(async (delegationArg: string, opts: { agent: string }) => {
-          let engine: SyncEngine | null = null;
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -357,40 +339,18 @@ export default function plugin(api: OpenClawPluginApi) {
             await saveDeviceConfig(workspace, deviceConfig);
 
             // Initial upload: scan all existing workspace files and sync to Storacha
-            engine = new SyncEngine(workspace);
-            await engine.init(deviceConfig);
-
-            const userIgnored = await readIgnoreFile(workspace);
-            const ignorePatterns = [
-              ".storacha",
-              "node_modules",
-              ".git",
-              "dist",
-              ...userIgnored,
-            ];
-
-            const allFiles = await scanWorkspaceFiles(
+            const sync = await startWorkspaceSync(
               workspace,
-              ignorePatterns,
+              agentId,
+              pluginConfig,
+              true,
+              console,
             );
-            if (allFiles.length > 0) {
-              const changes = allFiles.map((f) => ({
-                type: "add" as const,
-                path: f,
-              }));
-              await engine.processChanges(changes);
-              await engine.sync();
-              console.log(
-                `Uploaded ${allFiles.length} existing files to Storacha.`,
-              );
+            if (!sync) {
+              throw new Error("Failed to start sync engine");
             }
+            activeSyncers.set(workspace, sync);
 
-            // Save name archive after initial sync
-            const exportedArchive = await engine.exportNameArchive();
-            deviceConfig.nameArchive = exportedArchive;
-            await saveDeviceConfig(workspace, deviceConfig);
-
-            const { Agent } = await import("@storacha/ucn/pail");
             const agent = Agent.parse(deviceConfig.agentKey);
 
             console.log(`🔥 Storacha workspace ready for ${agentId}!`);
@@ -404,13 +364,6 @@ export default function plugin(api: OpenClawPluginApi) {
             );
             console.log("\nSync is now active (no gateway restart needed).");
           } catch (err: any) {
-            if (engine) {
-              try {
-                const state = await engine.inspect();
-                console.error("\nEngine state at failure:");
-                console.error(JSON.stringify(state, null, 2));
-              } catch {}
-            }
             console.error(`Error: ${err.message}`);
             if (err.stack) console.error(err.stack);
             if (err.cause?.stack) console.error("Caused by:", err.cause.stack);
@@ -431,7 +384,6 @@ export default function plugin(api: OpenClawPluginApi) {
             nameArg: string,
             opts: { agent: string },
           ) => {
-            let engine: SyncEngine | null = null;
             try {
               const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -466,17 +418,18 @@ export default function plugin(api: OpenClawPluginApi) {
               await saveDeviceConfig(workspace, deviceConfig);
 
               // Pull remote state before watcher starts
+              const sync = await startWorkspaceSync(
+                workspace,
+                agentId,
+                pluginConfig,
+                false,
+                console,
+              );
               let pullCount = 0;
-              engine = new SyncEngine(workspace);
-              await engine.init(deviceConfig);
-              pullCount = await engine.pullRemote();
-
-              // Save name archive after pull
-              const exportedArchive = await engine.exportNameArchive();
-              deviceConfig.nameArchive = exportedArchive;
-              await saveDeviceConfig(workspace, deviceConfig);
-
-              const { Agent } = await import("@storacha/ucn/pail");
+              if (sync) {
+                pullCount = await sync.engine.pullRemote();
+                activeSyncers.set(workspace, sync);
+              }
               const agent = Agent.parse(deviceConfig.agentKey);
 
               console.log(
@@ -487,13 +440,6 @@ export default function plugin(api: OpenClawPluginApi) {
               console.log(`Pulled ${pullCount} files from remote.`);
               console.log("\nSync is now active (no gateway restart needed).");
             } catch (err: any) {
-              if (engine) {
-                try {
-                  const state = await engine.inspect();
-                  console.error("\nEngine state at failure:");
-                  console.error(JSON.stringify(state, null, 2));
-                } catch {}
-              }
               console.error(`Error: ${err.message}`);
               if (err.stack) console.error(err.stack);
               if (err.cause?.stack)
@@ -553,36 +499,33 @@ export default function plugin(api: OpenClawPluginApi) {
             }
 
             // Re-delegate name capability
-            {
-              const { Agent, Name } = await import("@storacha/ucn/pail");
-              const { extract } = await import("@storacha/client/delegation");
-              const agent = Agent.parse(deviceConfig.agentKey);
 
-              let name;
-              if (deviceConfig.nameArchive) {
-                const archiveBytes = decodeDelegation(deviceConfig.nameArchive);
-                name = await Name.extract(agent, archiveBytes);
-              } else if (deviceConfig.nameDelegation) {
-                const nameBytes = decodeDelegation(deviceConfig.nameDelegation);
-                const { ok: nameDel } = await extract(nameBytes);
-                if (nameDel) {
-                  name = Name.from(agent, [nameDel]);
-                }
+            const agent = Agent.parse(deviceConfig.agentKey);
+
+            let name;
+            if (deviceConfig.nameArchive) {
+              const archiveBytes = decodeDelegation(deviceConfig.nameArchive);
+              name = await Name.extract(agent, archiveBytes);
+            } else if (deviceConfig.nameDelegation) {
+              const nameBytes = decodeDelegation(deviceConfig.nameDelegation);
+              const { ok: nameDel } = await extract(nameBytes);
+              if (nameDel) {
+                name = Name.from(agent, [nameDel]);
               }
+            }
 
-              if (name) {
-                const nameDel = await name.grant(
-                  targetDID as `did:${string}:${string}`,
+            if (name) {
+              const nameDel = await name.grant(
+                targetDID as `did:${string}:${string}`,
+              );
+              const { ok: archiveBytes } = await nameDel.archive();
+              if (archiveBytes) {
+                results.push(
+                  `Name delegation:\n${encodeDelegation(archiveBytes)}`,
                 );
-                const { ok: archiveBytes } = await nameDel.archive();
-                if (archiveBytes) {
-                  results.push(
-                    `Name delegation:\n${encodeDelegation(archiveBytes)}`,
-                  );
-                }
-              } else {
-                results.push("⚠️ No name state available to grant from.");
               }
+            } else {
+              results.push("⚠️ No name state available to grant from.");
             }
 
             console.log(`🔥 Delegations for ${targetDID}:\n`);
