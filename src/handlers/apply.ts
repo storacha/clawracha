@@ -47,10 +47,29 @@ export async function applyPendingOps(
   if (!current) {
     const firstPut = ops.find((op) => op.type === "put" && op.value);
     if (firstPut?.value) {
-      const result = await Revision.v0Put(fetcher, firstPut.key, firstPut.value);
+      const result = await Revision.v0Put(
+        fetcher,
+        firstPut.key,
+        firstPut.value,
+      );
       accumulate(result.additions);
 
-      const pubResult = await Revision.publish(fetcher, name, result.revision, { remotes: options?.remotes });
+      console.debug(
+        "publishing v0Put revision",
+        JSON.stringify(result.revision, null, 2),
+      );
+      console.debug(
+        "v0Put additions:",
+        result.additions.map((b) => b.cid.toString()),
+      );
+
+      const pubResult = await Revision.publish(fetcher, name, result.revision, {
+        remotes: options?.remotes,
+      });
+      console.debug(
+        "published v0Put revision",
+        JSON.stringify(pubResult, null, 2),
+      );
       accumulate(pubResult.additions);
       current = pubResult.value;
 
@@ -70,7 +89,9 @@ export async function applyPendingOps(
     const result = await batcher.commit();
     accumulate(result.additions);
 
-    const pubResult = await Revision.publish(fetcher, name, result.revision, { remotes: options?.remotes });
+    const pubResult = await Revision.publish(fetcher, name, result.revision, {
+      remotes: options?.remotes,
+    });
     accumulate(pubResult.additions);
     current = pubResult.value;
   }
