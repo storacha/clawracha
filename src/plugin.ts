@@ -315,6 +315,7 @@ export default function plugin(api: OpenClawPluginApi) {
             );
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
+            if (err.stack) console.error(err.stack);
             process.exit(1);
           }
         });
@@ -411,6 +412,7 @@ export default function plugin(api: OpenClawPluginApi) {
               } catch {}
             }
             console.error(`Error: ${err.message}`);
+            if (err.stack) console.error(err.stack);
             process.exit(1);
           }
         });
@@ -492,6 +494,7 @@ export default function plugin(api: OpenClawPluginApi) {
                 } catch {}
               }
               console.error(`Error: ${err.message}`);
+              if (err.stack) console.error(err.stack);
               process.exit(1);
             }
           },
@@ -591,6 +594,7 @@ export default function plugin(api: OpenClawPluginApi) {
 
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
+            if (err.stack) console.error(err.stack);
             process.exit(1);
           }
         });
@@ -642,6 +646,7 @@ export default function plugin(api: OpenClawPluginApi) {
             }
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
+            if (err.stack) console.error(err.stack);
             process.exit(1);
           }
         });
@@ -692,6 +697,7 @@ export default function plugin(api: OpenClawPluginApi) {
             }
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
+            if (err.stack) console.error(err.stack);
             process.exit(1);
           }
         });
