@@ -1,6 +1,6 @@
 {
   "name": "@storacha/clawracha",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "OpenClaw plugin for Storacha workspace sync via UCN Pail",
   "type": "module",
   "files": [
