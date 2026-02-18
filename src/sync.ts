@@ -130,22 +130,8 @@ export class SyncEngine {
 
     const beforeEntries = await this.getPailEntries();
 
-    if (this.pendingOps.length > 0) {
-      if (!this.carFile) {
-        throw new Error("CAR file not initialized");
-      }
-      const result = await applyPendingOps(
-        this.blocks,
-        name,
-        this.current,
-        this.pendingOps,
-      );
-      this.current = result.current;
-      for (const block of result.revisionBlocks) {
-        await this.carFile.put(block);
-      }
-      await this.storeBlocks(result.revisionBlocks);
-    } else {
+    let pendingOps = this.pendingOps;
+    if (pendingOps.length === 0) {
       // No pending ops — just pull remote
       try {
         const result = await Revision.resolve(this.blocks, name, {
@@ -156,12 +142,30 @@ export class SyncEngine {
       } catch (err) {
         if (!(err instanceof NoValueError)) throw err;
       }
+    } else {
+      while (pendingOps.length > 0) {
+        if (!this.carFile) {
+          throw new Error("CAR file not initialized");
+        }
+        const { current, revisionBlocks, event, remainingOps } =
+          await applyPendingOps(this.blocks, name, this.current, pendingOps);
+        this.current = current;
+        for (const block of revisionBlocks) {
+          await this.carFile.put(block);
+        }
+        await this.storeBlocks(revisionBlocks);
+        if (event) {
+          await this.carFile.put(event);
+          await this.storeBlocks([event]);
+        }
+        pendingOps = remainingOps;
+        await this.possiblyUploadCAR();
+        if (pendingOps.length > 0) {
+          this.carFile = await makeTempCar();
+        }
+      }
     }
-
     this.pendingOps = [];
-
-    // Upload all accumulated blocks as CAR
-    await this.possiblyUploadCAR();
 
     // Apply remote changes
     const afterEntries = await this.getPailEntries();
@@ -271,9 +275,10 @@ export class SyncEngine {
     const entries = await this.getPailEntries();
     return {
       root: this.current?.root?.toString() ?? null,
-      revisions: this.current?.revision?.map((r) => ({
-        event: r.event.cid.toString(),
-      })) ?? [],
+      revisions:
+        this.current?.revision?.map((r) => ({
+          event: r.event.cid.toString(),
+        })) ?? [],
       pailKeys: [...entries.keys()],
       pendingOps: this.pendingOps.map((op) => ({
         type: op.type,

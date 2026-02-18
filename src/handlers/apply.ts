@@ -11,6 +11,7 @@ import type {
   ClockConnection,
   NameView,
   ValueView,
+  EventBlock,
 } from "@storacha/ucn/pail/api";
 import type { Block } from "multiformats";
 import { MemoryBlockstore, withCache } from "@storacha/ucn/block";
@@ -20,7 +21,9 @@ import type { WorkspaceBlockstore } from "../blockstore/index.js";
 
 export interface ApplyResult {
   current: ValueView | null;
+  event: EventBlock | null;
   revisionBlocks: Block[];
+  remainingOps: PailOp[];
 }
 
 export async function applyPendingOps(
@@ -54,57 +57,41 @@ export async function applyPendingOps(
       );
       accumulate(result.additions);
 
-      console.debug(
-        "publishing v0Put revision",
-        "cid:",
-        result.revision.event.cid.toString(),
-        "value:",
-        JSON.stringify(result.revision.event.value, null, 2),
-      );
-      console.debug(
-        "v0Put additions:",
-        result.additions.map((b) => b.cid.toString()),
-      );
-
       const pubResult = await Revision.publish(fetcher, name, result.revision, {
         remotes: options?.remotes,
       });
-      console.debug(
-        "published v0Put revision",
-        "root:",
-        pubResult.value.root.toString(),
-        "revision:",
-        JSON.stringify(
-          pubResult.value.revision.map((r) => r.event.value),
-          null,
-          2,
-        ),
-      );
       accumulate(pubResult.additions);
       current = pubResult.value;
 
-      ops = ops.filter((op) => op !== firstPut);
+      return {
+        current,
+        event: result.revision.event,
+        revisionBlocks,
+        remainingOps: ops.filter((op) => op !== firstPut),
+      };
+    }
+    throw new Error("No current value or pending puts to initialize with");
+  }
+  const batcher = await Batch.create(fetcher, current);
+  for (const op of ops) {
+    if (op.type === "put" && op.value) {
+      await batcher.put(op.key, op.value);
+    } else if (op.type === "del") {
+      await batcher.del(op.key);
     }
   }
+  const result = await batcher.commit();
+  accumulate(result.additions);
 
-  if (ops.length > 0 && current) {
-    const batcher = await Batch.create(fetcher, current);
-    for (const op of ops) {
-      if (op.type === "put" && op.value) {
-        await batcher.put(op.key, op.value);
-      } else if (op.type === "del") {
-        await batcher.del(op.key);
-      }
-    }
-    const result = await batcher.commit();
-    accumulate(result.additions);
-
-    const pubResult = await Revision.publish(fetcher, name, result.revision, {
-      remotes: options?.remotes,
-    });
-    accumulate(pubResult.additions);
-    current = pubResult.value;
-  }
-
-  return { current, revisionBlocks };
+  const pubResult = await Revision.publish(fetcher, name, result.revision, {
+    remotes: options?.remotes,
+  });
+  accumulate(pubResult.additions);
+  current = pubResult.value;
+  return {
+    current,
+    event: result.revision.event,
+    revisionBlocks,
+    remainingOps: [], // All ops were included in the batch, so none remain
+  };
 }
