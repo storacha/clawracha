@@ -413,6 +413,7 @@ export default function plugin(api: OpenClawPluginApi) {
             }
             console.error(`Error: ${err.message}`);
             if (err.stack) console.error(err.stack);
+            if (err.cause?.stack) console.error("Caused by:", err.cause.stack);
             process.exit(1);
           }
         });
@@ -495,6 +496,8 @@ export default function plugin(api: OpenClawPluginApi) {
               }
               console.error(`Error: ${err.message}`);
               if (err.stack) console.error(err.stack);
+              if (err.cause?.stack)
+                console.error("Caused by:", err.cause.stack);
               process.exit(1);
             }
           },
@@ -591,7 +594,6 @@ export default function plugin(api: OpenClawPluginApi) {
             console.log(
               `  openclaw clawracha join <upload-delegation> <name-delegation> --agent <id>`,
             );
-
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
             if (err.stack) console.error(err.stack);
@@ -693,7 +695,9 @@ export default function plugin(api: OpenClawPluginApi) {
             }
             console.log(`\nPending ops (${state.pendingOps.length}):`);
             for (const op of state.pendingOps) {
-              console.log(`  ${op.type} ${op.key}${op.value ? ` → ${op.value}` : ""}`);
+              console.log(
+                `  ${op.type} ${op.key}${op.value ? ` → ${op.value}` : ""}`,
+              );
             }
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
