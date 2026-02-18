@@ -23,10 +23,7 @@ import {
   encodeDelegation,
   readDelegationArg,
 } from "./utils/delegation.js";
-import {
-  resolveAgentWorkspace,
-  getAgentIds,
-} from "./utils/workspace.js";
+import { resolveAgentWorkspace, getAgentIds } from "./utils/workspace.js";
 import { readIgnoreFile } from "./utils/ignore.js";
 
 // Per-workspace sync state
@@ -110,40 +107,21 @@ async function startWorkspaceSync(
 }
 
 /**
- * Recursively scan workspace for files, excluding patterns.
+ * Scan workspace for files, excluding patterns.
  * Returns paths relative to workspace.
  */
 async function scanWorkspaceFiles(
   workspace: string,
   ignorePatterns: string[],
 ): Promise<string[]> {
-  const results: string[] = [];
-
-  async function walk(dir: string): Promise<void> {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const rel = path.relative(workspace, path.join(dir, entry.name));
-
-      // Check if any ignore pattern matches
-      const ignored = ignorePatterns.some(
-        (pattern) =>
-          rel === pattern ||
-          rel.startsWith(pattern + "/") ||
-          entry.name === pattern,
-      );
-      if (ignored) continue;
-
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(fullPath);
-      } else if (entry.isFile()) {
-        results.push(rel);
-      }
-    }
-  }
-
-  await walk(workspace);
-  return results;
+  const { glob } = await import("glob");
+  return glob("**/*", {
+    cwd: workspace,
+    nodir: true,
+    ignore: ignorePatterns.map((p) =>
+      p.includes("/") || p.includes("*") ? p : `${p}/**`,
+    ),
+  });
 }
 
 // --- Plugin entry ---
@@ -176,9 +154,7 @@ export default function plugin(api: OpenClawPluginApi) {
             activeSyncers.set(workspace, sync);
           }
         } catch (err: any) {
-          ctx.logger.warn(
-            `[${agentId}] Failed to start sync: ${err.message}`,
-          );
+          ctx.logger.warn(`[${agentId}] Failed to start sync: ${err.message}`);
         }
       }
 
@@ -392,7 +368,10 @@ export default function plugin(api: OpenClawPluginApi) {
               ...userIgnored,
             ];
 
-            const allFiles = await scanWorkspaceFiles(workspace, ignorePatterns);
+            const allFiles = await scanWorkspaceFiles(
+              workspace,
+              ignorePatterns,
+            );
             if (allFiles.length > 0) {
               const changes = allFiles.map((f) => ({
                 type: "add" as const,
@@ -400,7 +379,9 @@ export default function plugin(api: OpenClawPluginApi) {
               }));
               await engine.processChanges(changes);
               await engine.sync();
-              console.log(`Uploaded ${allFiles.length} existing files to Storacha.`);
+              console.log(
+                `Uploaded ${allFiles.length} existing files to Storacha.`,
+              );
             }
 
             // Save name archive after initial sync
@@ -463,9 +444,11 @@ export default function plugin(api: OpenClawPluginApi) {
               const spaceDID = uploadDelegation.capabilities[0]?.with;
 
               const { ok: uploadArchive } = await uploadDelegation.archive();
-              if (!uploadArchive) throw new Error("Failed to archive upload delegation");
+              if (!uploadArchive)
+                throw new Error("Failed to archive upload delegation");
               const { ok: nameArchiveBytes } = await nameDelegation.archive();
-              if (!nameArchiveBytes) throw new Error("Failed to archive name delegation");
+              if (!nameArchiveBytes)
+                throw new Error("Failed to archive name delegation");
 
               deviceConfig.uploadDelegation = encodeDelegation(uploadArchive);
               deviceConfig.nameDelegation = encodeDelegation(nameArchiveBytes);
@@ -488,7 +471,9 @@ export default function plugin(api: OpenClawPluginApi) {
               const { Agent } = await import("@storacha/ucn/pail");
               const agent = Agent.parse(deviceConfig.agentKey);
 
-              console.log(`🔥 Joined existing Storacha workspace for ${agentId}!`);
+              console.log(
+                `🔥 Joined existing Storacha workspace for ${agentId}!`,
+              );
               console.log(`Agent DID: ${agent.did()}`);
               console.log(`Space: ${spaceDID ?? "unknown"}`);
               console.log(`Pulled ${pullCount} files from remote.`);
@@ -528,8 +513,7 @@ export default function plugin(api: OpenClawPluginApi) {
 
             // Re-delegate upload capability
             if (deviceConfig.uploadDelegation) {
-              const storachaClient =
-                await createStorachaClient(deviceConfig);
+              const storachaClient = await createStorachaClient(deviceConfig);
               const audience = {
                 did: () => targetDID as `did:${string}:${string}`,
               } as any;
@@ -555,21 +539,15 @@ export default function plugin(api: OpenClawPluginApi) {
             // Re-delegate name capability
             if (deviceConfig.nameDelegation) {
               const { Agent, Name } = await import("@storacha/ucn/pail");
-              const { extract } = await import(
-                "@storacha/client/delegation"
-              );
+              const { extract } = await import("@storacha/client/delegation");
               const agent = Agent.parse(deviceConfig.agentKey);
 
               let name;
               if (deviceConfig.nameArchive) {
-                const archiveBytes = decodeDelegation(
-                  deviceConfig.nameArchive,
-                );
+                const archiveBytes = decodeDelegation(deviceConfig.nameArchive);
                 name = await Name.extract(agent, archiveBytes);
               } else {
-                const nameBytes = decodeDelegation(
-                  deviceConfig.nameDelegation,
-                );
+                const nameBytes = decodeDelegation(deviceConfig.nameDelegation);
                 const { ok: nameDel } = await extract(nameBytes);
                 if (nameDel) {
                   name = Name.from(agent, [nameDel]);
