@@ -327,6 +327,7 @@ export default function plugin(api: OpenClawPluginApi) {
         )
         .requiredOption("--agent <id>", "Agent ID")
         .action(async (delegationArg: string, opts: { agent: string }) => {
+          let engine: SyncEngine | null = null;
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -355,7 +356,7 @@ export default function plugin(api: OpenClawPluginApi) {
             await saveDeviceConfig(workspace, deviceConfig);
 
             // Initial upload: scan all existing workspace files and sync to Storacha
-            const engine = new SyncEngine(workspace);
+            engine = new SyncEngine(workspace);
             await engine.init(deviceConfig);
 
             const userIgnored = await readIgnoreFile(workspace);
@@ -405,6 +406,13 @@ export default function plugin(api: OpenClawPluginApi) {
             );
             console.log("\nSync is now active (no gateway restart needed).");
           } catch (err: any) {
+            if (engine) {
+              try {
+                const state = await engine.inspect();
+                console.error("\nEngine state at failure:");
+                console.error(JSON.stringify(state, null, 2));
+              } catch {}
+            }
             console.error(`Error: ${err.message}`);
             process.exit(1);
           }
@@ -423,6 +431,7 @@ export default function plugin(api: OpenClawPluginApi) {
             nameArg: string,
             opts: { agent: string },
           ) => {
+            let engine: SyncEngine | null = null;
             try {
               const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -458,7 +467,7 @@ export default function plugin(api: OpenClawPluginApi) {
 
               // Pull remote state before watcher starts
               let pullCount = 0;
-              const engine = new SyncEngine(workspace);
+              engine = new SyncEngine(workspace);
               await engine.init(deviceConfig);
               pullCount = await engine.pullRemote();
 
@@ -480,6 +489,13 @@ export default function plugin(api: OpenClawPluginApi) {
                 "\nRestart the gateway to start syncing: `openclaw gateway restart`",
               );
             } catch (err: any) {
+              if (engine) {
+                try {
+                  const state = await engine.inspect();
+                  console.error("\nEngine state at failure:");
+                  console.error(JSON.stringify(state, null, 2));
+                } catch {}
+              }
               console.error(`Error: ${err.message}`);
               process.exit(1);
             }
