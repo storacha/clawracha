@@ -6,7 +6,7 @@
  */
 
 import chokidar from "chokidar";
-import * as fs from "node:fs/promises";
+import { readIgnoreFile } from "./utils/ignore.js";
 import * as path from "node:path";
 import type { FileChange, SyncPluginConfig } from "./types/index.js";
 
@@ -15,24 +15,6 @@ export interface WatcherOptions {
   config: SyncPluginConfig;
   onChanges: (changes: FileChange[]) => Promise<void>;
   debounceMs?: number;
-}
-
-/**
- * Read .clawrachaignore from workspace root (gitignore-style).
- * Returns parsed patterns, or empty array if file doesn't exist.
- */
-async function readIgnoreFile(workspace: string): Promise<string[]> {
-  const ignorePath = path.join(workspace, ".clawrachaignore");
-  try {
-    const content = await fs.readFile(ignorePath, "utf-8");
-    return content
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#"));
-  } catch (err: any) {
-    if (err.code === "ENOENT") return [];
-    throw err;
-  }
 }
 
 export class FileWatcher {

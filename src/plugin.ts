@@ -27,6 +27,7 @@ import {
   resolveAgentWorkspace,
   getAgentIds,
 } from "./utils/workspace.js";
+import { readIgnoreFile } from "./utils/ignore.js";
 
 // Per-workspace sync state
 interface WorkspaceSync {
@@ -106,6 +107,43 @@ async function startWorkspaceSync(
   logger.info(`[${agentId}] Started syncing workspace: ${workspace}`);
 
   return { engine, watcher, workspace, agentId };
+}
+
+/**
+ * Recursively scan workspace for files, excluding patterns.
+ * Returns paths relative to workspace.
+ */
+async function scanWorkspaceFiles(
+  workspace: string,
+  ignorePatterns: string[],
+): Promise<string[]> {
+  const results: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = path.relative(workspace, path.join(dir, entry.name));
+
+      // Check if any ignore pattern matches
+      const ignored = ignorePatterns.some(
+        (pattern) =>
+          rel === pattern ||
+          rel.startsWith(pattern + "/") ||
+          entry.name === pattern,
+      );
+      if (ignored) continue;
+
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.isFile()) {
+        results.push(rel);
+      }
+    }
+  }
+
+  await walk(workspace);
+  return results;
 }
 
 // --- Plugin entry ---
@@ -338,6 +376,36 @@ export default function plugin(api: OpenClawPluginApi) {
             deviceConfig.uploadDelegation = encodeDelegation(archiveBytes);
             deviceConfig.spaceDID = spaceDID ?? undefined;
             deviceConfig.setupComplete = true;
+            await saveDeviceConfig(workspace, deviceConfig);
+
+            // Initial upload: scan all existing workspace files and sync to Storacha
+            const storachaClient = await createStorachaClient(deviceConfig);
+            const engine = new SyncEngine(storachaClient, workspace);
+            await engine.init(deviceConfig);
+
+            const userIgnored = await readIgnoreFile(workspace);
+            const ignorePatterns = [
+              ".storacha",
+              "node_modules",
+              ".git",
+              "dist",
+              ...userIgnored,
+            ];
+
+            const allFiles = await scanWorkspaceFiles(workspace, ignorePatterns);
+            if (allFiles.length > 0) {
+              const changes = allFiles.map((f) => ({
+                type: "add" as const,
+                path: f,
+              }));
+              await engine.processChanges(changes);
+              await engine.sync();
+              console.log(`Uploaded ${allFiles.length} existing files to Storacha.`);
+            }
+
+            // Save name archive after initial sync
+            const exportedArchive = await engine.exportNameArchive();
+            deviceConfig.nameArchive = exportedArchive;
             await saveDeviceConfig(workspace, deviceConfig);
 
             const { Agent } = await import("@storacha/ucn/pail");
