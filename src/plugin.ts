@@ -553,7 +553,7 @@ export default function plugin(api: OpenClawPluginApi) {
             }
 
             // Re-delegate name capability
-            if (deviceConfig.nameDelegation) {
+            {
               const { Agent, Name } = await import("@storacha/ucn/pail");
               const { extract } = await import("@storacha/client/delegation");
               const agent = Agent.parse(deviceConfig.agentKey);
@@ -562,7 +562,7 @@ export default function plugin(api: OpenClawPluginApi) {
               if (deviceConfig.nameArchive) {
                 const archiveBytes = decodeDelegation(deviceConfig.nameArchive);
                 name = await Name.extract(agent, archiveBytes);
-              } else {
+              } else if (deviceConfig.nameDelegation) {
                 const nameBytes = decodeDelegation(deviceConfig.nameDelegation);
                 const { ok: nameDel } = await extract(nameBytes);
                 if (nameDel) {
@@ -580,9 +580,9 @@ export default function plugin(api: OpenClawPluginApi) {
                     `Name delegation:\n${encodeDelegation(archiveBytes)}`,
                   );
                 }
+              } else {
+                results.push("⚠️ No name state available to grant from.");
               }
-            } else {
-              results.push("⚠️ No name delegation to re-delegate.");
             }
 
             console.log(`🔥 Delegations for ${targetDID}:\n`);
