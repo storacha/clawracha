@@ -50,7 +50,7 @@ export class FileWatcher {
       ...config.ignorePatterns,
       ...userIgnored,
       ".storacha/**", // Always ignore our own data
-    ];
+    ].map((p) => path.join(workspace, p));
 
     this.watcher = chokidar.watch(watchPaths, {
       ignored,
