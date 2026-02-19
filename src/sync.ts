@@ -252,6 +252,12 @@ export class SyncEngine {
    * Used by join to overwrite local with remote before watcher starts.
    */
   async pullRemote(): Promise<number> {
+    const op = this.syncLock.then(() => this._pullRemoteInner());
+    this.syncLock = op.then(() => void 0).catch(() => {}); // heal chain so subsequent syncs run
+    return op;
+  }
+
+  private async _pullRemoteInner(): Promise<number> {
     const { name } = this.requireRunning();
 
     try {
