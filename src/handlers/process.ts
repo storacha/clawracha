@@ -37,7 +37,6 @@ export async function processChanges(
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
-  console.log("Processing changes:", JSON.stringify(changes, null, 2));
   const mdChanges = changes.filter((c) => isMarkdown(c.path));
   const regularChanges = changes.filter((c) => !isMarkdown(c.path));
 
@@ -84,10 +83,13 @@ export async function processChanges(
       path.join(workspace, change.path),
       "utf-8",
     );
-    const { mdEntryCid, additions } = current
+    const newEntry = current
       ? await mdsync.put(blocks, current, change.path, content)
       : await mdsync.v0Put(content);
-
+    if (!newEntry) {
+      continue; // No change detected, skip writing a new entry.
+    }
+    const { mdEntryCid, additions } = newEntry;
     // Sink blocks to CAR for upload, and store locally for future resolveValue calls.
     for (const block of additions) {
       await sink(block);

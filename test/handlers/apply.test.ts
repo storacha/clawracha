@@ -130,13 +130,25 @@ describe("applyPendingOps", () => {
       { type: "put", key: "c.txt", value: cidC },
     ];
 
-    const result = await applyPendingOps(blocks, name, null, ops, {
+    // Bootstrap applies first put via v0Put, returns rest as remainingOps
+    let result = await applyPendingOps(blocks, name, null, ops, {
       remotes: [remote],
     });
-
-    expect(result.current).not.toBeNull();
     await storeBlocks(blocks, result.revisionBlocks);
 
+    // Apply remaining ops (must upload between each publish cycle)
+    while (result.remainingOps.length > 0) {
+      result = await applyPendingOps(
+        blocks,
+        name,
+        result.current,
+        result.remainingOps,
+        { remotes: [remote] },
+      );
+      await storeBlocks(blocks, result.revisionBlocks);
+    }
+
+    expect(result.current).not.toBeNull();
     const entries = await getEntries(blocks, result.current!);
     expect(entries.size).toBe(3);
     expect(entries.get("a.txt")).toBe(cidA.toString());
@@ -163,12 +175,26 @@ describe("applyPendingOps", () => {
     );
     await storeBlocks(blocks, init.revisionBlocks);
 
+    // Apply remaining ops from bootstrap (v0Put only handles first put)
+    let current = init.current;
+    if (init.remainingOps.length > 0) {
+      const next = await applyPendingOps(
+        blocks,
+        name,
+        current,
+        init.remainingOps,
+        { remotes: [remote] },
+      );
+      await storeBlocks(blocks, next.revisionBlocks);
+      current = next.current;
+    }
+
     // Now apply mixed ops: add c.txt, delete a.txt
     const cidC = await createTestCID("file-c");
     const result = await applyPendingOps(
       blocks,
       name,
-      init.current,
+      current,
       [
         { type: "put", key: "c.txt", value: cidC },
         { type: "del", key: "a.txt" },
@@ -186,16 +212,13 @@ describe("applyPendingOps", () => {
     expect(entries.get("c.txt")).toBe(cidC.toString());
   });
 
-  it("should return null current when no ops and no current", async () => {
+  it("should throw when no ops and no current", async () => {
     const agent = await Agent.generate();
     const name = await Name.create(agent);
 
-    const result = await applyPendingOps(blocks, name, null, [], {
-      remotes: [remote],
-    });
-
-    expect(result.current).toBeNull();
-    expect(result.revisionBlocks).toEqual([]);
+    await expect(
+      applyPendingOps(blocks, name, null, [], { remotes: [remote] }),
+    ).rejects.toThrow("No current value or pending puts to initialize with");
   });
 
   it("should converge when two agents publish concurrently", async () => {
@@ -271,6 +294,8 @@ describe("applyPendingOps", () => {
     expect(entriesA.get("three.txt")).toBe(cid3.toString());
 
     // Both agents should have converged to the same root
-    expect(resolveA.value.root.toString()).toBe(resultB.current!.root.toString());
+    expect(resolveA.value.root.toString()).toBe(
+      resultB.current!.root.toString(),
+    );
   });
 });

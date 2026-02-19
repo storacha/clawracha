@@ -162,7 +162,9 @@ const makeComparator = (
   events: EventRGA,
 ): ((a: MarkdownEvent, b: MarkdownEvent) => number) => {
   const ordered = events.toWeightedArray();
-  const index = new Map<string, number>(ordered.map((e, i) => [e.toString(), i]));
+  const index = new Map<string, number>(
+    ordered.map((e, i) => [e.toString(), i]),
+  );
   return (a, b) =>
     (index.get(a.toString()) ?? -1) - (index.get(b.toString()) ?? -1);
 };
@@ -202,9 +204,7 @@ const firstPut = async (
  * Returns the markdown entry CID and blocks to store. Caller is
  * responsible for creating the Pail revision via Revision.v0Put.
  */
-export const v0Put = async (
-  newMarkdown: string,
-): Promise<MarkdownResult> => {
+export const v0Put = async (newMarkdown: string): Promise<MarkdownResult> => {
   return firstPut(newMarkdown, []);
 };
 
@@ -224,7 +224,7 @@ export const put = async (
   current: ValueView,
   key: string,
   newMarkdown: string,
-): Promise<MarkdownResult> => {
+): Promise<MarkdownResult | null> => {
   const mdEntry = await resolveValue(blocks, current, key);
   if (!mdEntry) {
     // Key doesn't exist yet — bootstrap with firstPut.
@@ -246,6 +246,9 @@ export const put = async (
 
   // Diff the current tree against the new markdown and apply.
   const changeset = computeChangeSet(rgaRoot, newMarkdown, mdEvent);
+  if (changeset.changes.length === 0) {
+    return null; // No changes to apply, skip writing a new entry.
+  }
   const comparator = makeComparator(eventRGA);
   const newRoot = applyRGAChangeSet(rgaRoot, changeset, comparator);
 
@@ -428,10 +431,7 @@ const resolveValue = async (
 
   // Fast path: single head, no merge needed.
   if (current.revision.length === 1) {
-    return await deserializedMarkdownEntryCID(
-      blocks,
-      mdEntryBlockCid as CID,
-    );
+    return await deserializedMarkdownEntryCID(blocks, mdEntryBlockCid as CID);
   }
 
   // Multi-head: find common ancestor and replay events in causal order.
