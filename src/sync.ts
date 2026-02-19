@@ -36,13 +36,18 @@ import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
 
 /** Engine is either stopped or running with a name and client. */
 type State =
-  | { running: false }
-  | { running: true; name: NameView; storachaClient: Client };
-
+  | { initialized: false; running: false }
+  | { initialized: true; running: true; name: NameView; storachaClient: Client }
+  | {
+      initialized: true;
+      running: false;
+      name: NameView;
+      storachaClient: Client;
+    };
 export class SyncEngine {
   private workspace: string;
   private blocks: WorkspaceBlockstore;
-  private state: State = { running: false };
+  private state: State = { initialized: false, running: false };
   private current: ValueView | null = null;
   private pendingOps: PailOp[] = [];
   private carFile: WritableCar | null = null;
@@ -79,7 +84,7 @@ export class SyncEngine {
       name = await Name.create(agent);
     }
 
-    this.state = { running: true, name, storachaClient };
+    this.state = { initialized: true, running: true, name, storachaClient };
 
     try {
       const result = await Revision.resolve(this.blocks, name);
@@ -99,6 +104,16 @@ export class SyncEngine {
    */
   private requireRunning(): { name: NameView; storachaClient: Client } {
     if (!this.state.running) {
+      throw new Error("Sync engine not running");
+    }
+    return this.state;
+  }
+
+  /**
+   * Require state is initialized or throw.
+   */
+  private requireInitialized(): { name: NameView; storachaClient: Client } {
+    if (!this.state.initialized) {
       throw new Error("Sync engine not initialized");
     }
     return this.state;
@@ -134,7 +149,6 @@ export class SyncEngine {
 
   private async _syncInner(): Promise<void> {
     const { name } = this.requireRunning();
-
     const beforeEntries = await this.getPailEntries();
 
     if (this.pendingOps.length === 0) {
@@ -242,7 +256,14 @@ export class SyncEngine {
    */
   async stop(): Promise<void> {
     this.syncLock = this.syncLock.then(() => {
-      this.state = { running: false };
+      this.state = this.state.initialized
+        ? {
+            initialized: true,
+            running: false,
+            name: this.state.name,
+            storachaClient: this.state.storachaClient,
+          }
+        : { initialized: false, running: false };
     });
     return this.syncLock;
   }
@@ -322,7 +343,7 @@ export class SyncEngine {
   }
 
   async exportNameArchive(): Promise<string> {
-    const { name } = this.requireRunning();
+    const { name } = this.requireInitialized();
     const bytes = await name.archive();
     return encodeDelegation(bytes);
   }
