@@ -211,6 +211,8 @@ export default function plugin(api: OpenClawPluginApi) {
     if (newSync) {
       activeSyncers.set(updateParams.workspace, newSync);
     }
+    res.statusCode = 200;
+    res.end(JSON.stringify({ success: true }));
     return true;
   });
   api.registerService({
