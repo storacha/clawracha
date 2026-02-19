@@ -235,6 +235,75 @@ export async function doSetup(
   return { agentDID: agent.did(), spaceDID: spaceDID ?? undefined };
 }
 
+export async function doSetupWithLogin(
+  workspace: string,
+  agentId: string,
+  email: string,
+  spaceName: string,
+  pluginConfig: Partial<SyncPluginConfig>,
+  gatewayConfig?: NonNullable<OpenClawConfig["gateway"]>,
+): Promise<SetupResult> {
+  const deviceConfig = await loadDeviceConfig(workspace);
+  if (!deviceConfig?.agentKey) {
+    throw new Error("Not initialized. Run init first.");
+  }
+  if (deviceConfig.setupComplete) {
+    const agent = Agent.parse(deviceConfig.agentKey);
+    return { agentDID: agent.did(), spaceDID: deviceConfig.spaceDID };
+  }
+
+  const { create: createClient } = await import("@storacha/client");
+  const { spaceAccess } = await import("@storacha/client/capability/access");
+  const tempClient = await createClient();
+
+  console.log(`\nA confirmation email will be sent to ${email}.`);
+  console.log("Please click the link in the email to continue...");
+  const account = await tempClient.login(email as `${string}@${string}`);
+
+  console.log("✅ Email confirmed!");
+  console.log("Checking payment plan...");
+  await account.plan.wait();
+  console.log("✅ Payment plan active!");
+
+  console.log(`Creating space "${spaceName}"...`);
+  const space = await tempClient.createSpace(spaceName, { account });
+  await tempClient.setCurrentSpace(space.did());
+
+  // Delegate upload access from the new space to our clawracha agent
+  const agent = Agent.parse(deviceConfig.agentKey);
+  const audience = { did: () => agent.did() } as any;
+  const delegation = await tempClient.createDelegation(
+    audience,
+    // @ts-expect-error createDelegation should validate abilities
+    Object.keys(spaceAccess),
+    { expiration: Infinity },
+  );
+
+  const { ok: archiveBytes } = await delegation.archive();
+  if (!archiveBytes) throw new Error("Failed to archive delegation");
+
+  deviceConfig.uploadDelegation = encodeDelegation(archiveBytes);
+  deviceConfig.spaceDID = space.did();
+  deviceConfig.setupComplete = true;
+  await saveDeviceConfig(workspace, deviceConfig);
+
+  // One-shot sync: scan existing files, upload, stop
+  const sync = await startWorkspaceSync(
+    workspace, agentId, pluginConfig, true, console,
+  );
+  if (!sync) throw new Error("Failed to start sync engine");
+  await sync.watcher.waitForReady();
+  await sync.watcher.stop();
+  await sync.watcher.forceFlush();
+  await sync.engine.stop();
+
+  if (gatewayConfig) {
+    await requestWorkspaceUpdate(workspace, agentId, gatewayConfig);
+  }
+
+  return { agentDID: agent.did(), spaceDID: space.did() };
+}
+
 export async function doJoin(
   workspace: string,
   agentId: string,

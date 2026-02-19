@@ -33,6 +33,7 @@ import {
   startWorkspaceSync,
   doInit,
   doSetup,
+  doSetupWithLogin,
   doJoin,
 } from "./commands.js";
 
@@ -285,12 +286,12 @@ export default function plugin(api: OpenClawPluginApi) {
 
       // --- setup ---
       clawracha
-        .command("setup <delegation>")
+        .command("setup [delegation]")
         .description(
-          "Set up a NEW workspace (first device). <delegation> is a file path or base64 CID string.",
+          "Set up a NEW workspace. Without args, logs into Storacha interactively. With <delegation>, uses a pre-created delegation.",
         )
         .requiredOption("--agent <id>", "Agent ID")
-        .action(async (delegationArg: string, opts: { agent: string }) => {
+        .action(async (delegationArg: string | undefined, opts: { agent: string }) => {
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -302,13 +303,19 @@ export default function plugin(api: OpenClawPluginApi) {
               process.exit(1);
             }
 
-            const result = await doSetup(
-              workspace,
-              agentId,
-              delegationArg,
-              pluginConfig,
-              config.gateway,
-            );
+            let result;
+            if (!delegationArg) {
+              const { prompt } = await import("./prompts.js");
+              const email = await prompt("Storacha email: ");
+              const spaceName = await prompt("Space name: ");
+              result = await doSetupWithLogin(
+                workspace, agentId, email, spaceName, pluginConfig, config.gateway,
+              );
+            } else {
+              result = await doSetup(
+                workspace, agentId, delegationArg, pluginConfig, config.gateway,
+              );
+            }
 
             console.log(`🔥 Storacha workspace ready for ${agentId}!`);
             console.log(`Agent DID: ${result.agentDID}`);
@@ -581,7 +588,7 @@ export default function plugin(api: OpenClawPluginApi) {
         .description("Interactive guided setup for Storacha workspace sync")
         .requiredOption("--agent <id>", "Agent ID")
         .action(async (opts: { agent: string }) => {
-          const { promptMultiline, choose } = await import("./prompts.js");
+          const { prompt, promptMultiline, choose } = await import("./prompts.js");
 
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
@@ -616,30 +623,42 @@ export default function plugin(api: OpenClawPluginApi) {
             if (choice === "NEW workspace") {
               // --- Setup path ---
               console.log("\n📦 New Workspace Setup\n");
-              console.log(
-                "You need a Storacha upload delegation for this agent.",
-              );
-              console.log("On a machine with the Storacha CLI, run:\n");
-              console.log(
-                `  storacha delegation create ${initResult.agentDID} --base64\n`,
+
+              const method = await choose(
+                "How do you want to set up your space?",
+                ["Login to Storacha", "Provide delegation from Storacha CLI"],
               );
 
-              const delegationInput = await promptMultiline(
-                "Paste your upload delegation here:",
-              );
-              if (!delegationInput) {
-                console.error("No delegation provided. Aborting.");
-                process.exit(1);
+              let result;
+              if (method === "Login to Storacha") {
+                const email = await prompt("Storacha email: ");
+                const spaceName = await prompt("Space name: ");
+                console.log("\n⏳ Setting up workspace...");
+                result = await doSetupWithLogin(
+                  workspace, agentId, email, spaceName, pluginConfig, config.gateway,
+                );
+              } else {
+                console.log(
+                  "You need a Storacha upload delegation for this agent.",
+                );
+                console.log("On a machine with the Storacha CLI, run:\n");
+                console.log(
+                  `  storacha delegation create ${initResult.agentDID} --base64\n`,
+                );
+
+                const delegationInput = await promptMultiline(
+                  "Paste your upload delegation here:",
+                );
+                if (!delegationInput) {
+                  console.error("No delegation provided. Aborting.");
+                  process.exit(1);
+                }
+
+                console.log("\n⏳ Setting up workspace...");
+                result = await doSetup(
+                  workspace, agentId, delegationInput, pluginConfig, config.gateway,
+                );
               }
-
-              console.log("\n⏳ Setting up workspace...");
-              const result = await doSetup(
-                workspace,
-                agentId,
-                delegationInput,
-                pluginConfig,
-                config.gateway,
-              );
 
               console.log(`\n🔥 Storacha workspace ready for ${agentId}!`);
               console.log(`  Agent DID: ${result.agentDID}`);
