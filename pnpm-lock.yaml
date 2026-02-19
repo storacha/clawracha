@@ -18,8 +18,8 @@ importers:
         specifier: ^2.0.4
         version: 2.0.4(encoding@0.1.13)
       '@storacha/md-merge':
-        specifier: 0.7.0
-        version: 0.7.0
+        specifier: 0.8.0
+        version: 0.8.0
       '@storacha/ucn':
         specifier: 1.1.1-rc.3
         version: 1.1.1-rc.3
@@ -1580,8 +1580,8 @@ packages:
   '@storacha/filecoin-client@1.0.18':
     resolution: {integrity: sha512-xyKWUSWoJ4nmPIobRqueLo0hXQzC37N6/AFvFQt4CP0NEVoezijX006hWylymo/nHbJKRiC5t6T1OTM1Cxg44g==}
 
-  '@storacha/md-merge@0.7.0':
-    resolution: {integrity: sha512-HR5s24Q3zzLjqsK478+jJqvVP2gvuMdzv6x5km/z/p2ECyVzcUsB96FS6nZEvnmFuih5YnWKhoxDqRIqkde+Ow==}
+  '@storacha/md-merge@0.8.0':
+    resolution: {integrity: sha512-WL6Zw5Sz541gPjJLq33tNNKmRTVdiwwHDJBr4mH9tKiSdf9E+iSeOtMPZGNVm+7ToM1zSBuKySG8H467W6UsLQ==}
 
   '@storacha/one-webcrypto@1.0.1':
     resolution: {integrity: sha512-bD+vWmcgsEBqU0Dz04BR43SA03bBoLTAY29vaKasY9Oe8cb6XIP0/vkm0OS2UwKC13c8uRgFW4rjJUgDCNLejQ==}
@@ -5976,7 +5976,7 @@ snapshots:
       '@ucanto/interface': 11.0.1
       '@ucanto/transport': 9.2.1
 
-  '@storacha/md-merge@0.7.0':
+  '@storacha/md-merge@0.8.0':
     dependencies:
       '@ipld/dag-cbor': 9.2.5
       '@storacha/ucn': 1.1.1-rc.3
