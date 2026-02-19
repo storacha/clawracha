@@ -22,6 +22,7 @@ export class FileWatcher {
   private watcher: chokidar.FSWatcher | null = null;
   private pendingChanges: Map<string, FileChange> = new Map();
   private debounceTimer: NodeJS.Timeout | null = null;
+  private readyPromise: Promise<void> | null = null;
   private options: WatcherOptions;
   private debounceMs: number;
 
@@ -61,11 +62,25 @@ export class FileWatcher {
       },
     });
 
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.watcher!.on("ready", () => resolve());
+    });
+
     this.watcher
       .on("add", (filePath) => this.handleChange("add", filePath))
       .on("change", (filePath) => this.handleChange("change", filePath))
       .on("unlink", (filePath) => this.handleChange("unlink", filePath))
       .on("error", (err) => console.error("Watcher error:", err));
+  }
+
+  /**
+   * Wait for chokidar to finish its initial scan
+   */
+  async waitForReady(): Promise<void> {
+    if (!this.readyPromise) {
+      throw new Error("Watcher not started");
+    }
+    return this.readyPromise;
   }
 
   /**

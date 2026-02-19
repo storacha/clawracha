@@ -240,8 +240,11 @@ export class SyncEngine {
   /**
    * Mark the engine as stopped.
    */
-  stop(): void {
-    this.state = { running: false };
+  async stop(): Promise<void> {
+    this.syncLock = this.syncLock.then(() => {
+      this.state = { running: false };
+    });
+    return this.syncLock;
   }
 
   /**

@@ -38,12 +38,12 @@ importers:
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
-      glob:
-        specifier: ^13.0.5
-        version: 13.0.5
       multiformats:
         specifier: ^13.0.0
         version: 13.4.2
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       '@ipld/unixfs':
         specifier: ^3.0.0

@@ -43,7 +43,8 @@
     "@web3-storage/pail": "0.6.3-rc.3",
     "carstream": "^2.3.0",
     "chokidar": "^3.6.0",
-    "multiformats": "^13.0.0"
+    "multiformats": "^13.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@ipld/unixfs": "^3.0.0",

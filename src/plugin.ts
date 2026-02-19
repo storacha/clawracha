@@ -9,10 +9,12 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { json as consumeJson } from "stream/consumers";
 import type {
   OpenClawPluginApi,
   OpenClawPluginServiceContext,
   AnyAgentTool,
+  OpenClawConfig,
 } from "openclaw/plugin-sdk";
 import type { DeviceConfig, SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
@@ -26,6 +28,7 @@ import {
 import { resolveAgentWorkspace, getAgentIds } from "./utils/workspace.js";
 import { Agent, Name } from "@storacha/ucn/pail";
 import { extract } from "@storacha/client/delegation";
+import * as z from "zod";
 
 // Per-workspace sync state
 interface WorkspaceSync {
@@ -38,6 +41,10 @@ interface WorkspaceSync {
 const activeSyncers = new Map<string, WorkspaceSync>();
 
 // --- Config helpers ---
+const UpdateParams = z.object({
+  agentId: z.string(),
+  workspace: z.string(),
+});
 
 async function loadDeviceConfig(
   workspace: string,
@@ -49,6 +56,57 @@ async function loadDeviceConfig(
   } catch (err: any) {
     if (err.code === "ENOENT") return null;
     throw err;
+  }
+}
+
+async function requestWorkspaceUpdate(
+  workspace: string,
+  agentId: string,
+  gatewayConfig: NonNullable<OpenClawConfig["gateway"]>,
+) {
+  // Mirror resolveGatewayPort from openclaw core
+  const DEFAULT_GATEWAY_PORT = 18789;
+  let port = DEFAULT_GATEWAY_PORT;
+  const envRaw =
+    process.env.OPENCLAW_GATEWAY_PORT?.trim() ||
+    process.env.CLAWDBOT_GATEWAY_PORT?.trim();
+  if (envRaw) {
+    const parsed = Number.parseInt(envRaw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) port = parsed;
+  } else if (
+    typeof gatewayConfig.port === "number" &&
+    Number.isFinite(gatewayConfig.port) &&
+    gatewayConfig.port > 0
+  ) {
+    port = gatewayConfig.port;
+  }
+
+  const url = `http://127.0.0.1:${port}/api/channels/clawracha/workspace-update`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // Auth: /api/channels/ routes get gateway auth middleware
+  const token = gatewayConfig.auth?.token ?? gatewayConfig.auth?.password;
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ agentId, workspace }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `Warning: Failed to notify gateway (${res.status}). Restart the gateway to pick up changes.`,
+      );
+    }
+  } catch (err: any) {
+    console.warn(
+      `Warning: Could not reach gateway at ${url}: ${err.message}. Restart the gateway to pick up changes.`,
+    );
   }
 }
 
@@ -111,9 +169,56 @@ async function startWorkspaceSync(
 
 export default function plugin(api: OpenClawPluginApi) {
   const pluginConfig = (api.pluginConfig ?? {}) as Partial<SyncPluginConfig>;
-
   // --- Background service: one syncer per agent workspace ---
+  api.registerHttpHandler(async (req, res) => {
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`,
+    );
 
+    // Only handle /api/channels/clawracha/workspace-update
+    if (!url.pathname.startsWith("/api/channels/clawracha/workspace-update")) {
+      return false;
+    }
+
+    // only handle post requests
+    if (req.method !== "POST") {
+      return false;
+    }
+
+    const body = await consumeJson(req);
+    const paramsResult = UpdateParams.safeParse(body);
+    if (paramsResult.success === false) {
+      res.statusCode = 400;
+      res.end(
+        JSON.stringify({
+          error: "Invalid parameters",
+          details: paramsResult.error,
+        }),
+      );
+      return true;
+    }
+    const updateParams = paramsResult.data;
+    const sync = activeSyncers.get(updateParams.workspace);
+    if (sync) {
+      // stop active sync engine if present
+      // waiting for any active syncs to flush.
+      await sync.watcher.stop();
+      await sync.watcher.forceFlush();
+      await sync.engine.stop();
+    }
+    const newSync = await startWorkspaceSync(
+      updateParams.workspace,
+      updateParams.agentId,
+      pluginConfig,
+      false,
+      api.logger,
+    );
+    if (newSync) {
+      activeSyncers.set(updateParams.workspace, newSync);
+    }
+    return true;
+  });
   api.registerService({
     id: "storacha-sync",
     async start(ctx: OpenClawPluginServiceContext) {
@@ -155,8 +260,9 @@ export default function plugin(api: OpenClawPluginApi) {
 
     async stop(ctx: OpenClawPluginServiceContext) {
       for (const [workspace, sync] of activeSyncers) {
-        sync.engine.stop();
         await sync.watcher.stop();
+        await sync.watcher.forceFlush();
+        await sync.engine.stop();
         ctx.logger.info(`[${sync.agentId}] Stopped syncing: ${workspace}`);
       }
       activeSyncers.clear();
@@ -228,7 +334,6 @@ export default function plugin(api: OpenClawPluginApi) {
   } as AnyAgentTool);
 
   // --- CLI commands: openclaw clawracha <subcommand> ---
-
   api.registerCli(
     ({ program, config }) => {
       const clawracha = program
@@ -349,8 +454,20 @@ export default function plugin(api: OpenClawPluginApi) {
             if (!sync) {
               throw new Error("Failed to start sync engine");
             }
-            activeSyncers.set(workspace, sync);
 
+            // Wait for initial files to flush through, then stop the watcher
+            await sync.watcher.waitForReady();
+            await sync.watcher.stop();
+
+            // force out changes then stop the engine, which will wait for last
+            // sync to complete
+            await sync.watcher.forceFlush();
+            await sync.engine.stop();
+
+            // post to the endpoint to tell the service to start syncing this space
+            if (config.gateway) {
+              await requestWorkspaceUpdate(workspace, agentId, config.gateway);
+            }
             const agent = Agent.parse(deviceConfig.agentKey);
 
             console.log(`🔥 Storacha workspace ready for ${agentId}!`);
@@ -426,10 +543,23 @@ export default function plugin(api: OpenClawPluginApi) {
                 console,
               );
               let pullCount = 0;
-              if (sync) {
-                pullCount = await sync.engine.pullRemote();
-                activeSyncers.set(workspace, sync);
+              if (!sync) {
+                throw new Error("Failed to start sync engine");
               }
+              pullCount = await sync.engine.pullRemote();
+              await sync.watcher.stop();
+              await sync.watcher.forceFlush();
+              await sync.engine.stop();
+
+              // post to the endpoint to tell the service to start syncing this space
+              if (config.gateway) {
+                await requestWorkspaceUpdate(
+                  workspace,
+                  agentId,
+                  config.gateway,
+                );
+              }
+
               const agent = Agent.parse(deviceConfig.agentKey);
 
               console.log(
