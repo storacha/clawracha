@@ -37,6 +37,7 @@ import {
   RGAChangeSet,
   decodeChangeSet,
   toMarkdown,
+  mergeRGATrees,
 } from "@storacha/md-merge";
 import * as Pail from "@web3-storage/pail";
 import { decode, encode } from "multiformats/block";
@@ -497,17 +498,25 @@ const resolveValue = async (
       const newMDEntry = await getMarkdownEntry(blocks, mdEntryCid as CID);
       if (newMDEntry.type === "initial") {
         // First write for this key — bootstrap from the stored entry.
+        const newEventRGA = await getEventRGAFromCID(blocks, newMDEntry.events);
+        const newRoot = await getRGATreeFromRootCID(blocks, newMDEntry.root, newEventRGA);
         if (mdEntry) {
-          throw new Error(
-            `Expected no existing markdown entry for initial event, found ${mdEntryCid}`,
-          );
+          // Concurrent initial — two branches independently created this key.
+          // Merge event histories and merge the two RGA trees.
+          mdEntry.events.merge(newEventRGA);
+          const comparator = makeComparator(mdEntry.events);
+          mdEntry = {
+            type: "initial",
+            events: mdEntry.events,
+            root: mergeRGATrees(mdEntry.root, newRoot, comparator),
+          };
+        } else {
+          mdEntry = {
+            type: "initial",
+            events: newEventRGA,
+            root: newRoot,
+          };
         }
-        const eventRGA = await getEventRGAFromCID(blocks, newMDEntry.events);
-        mdEntry = {
-          type: "initial",
-          events: eventRGA,
-          root: await getRGATreeFromRootCID(blocks, newMDEntry.root, eventRGA),
-        };
       } else {
         // Update — merge event histories, then apply the changeset.
         if (!mdEntry) {

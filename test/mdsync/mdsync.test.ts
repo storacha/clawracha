@@ -142,3 +142,48 @@ describe("mdsync", () => {
     expect(result).toContain("From replica 2.");
   });
 });
+
+  it("resolves concurrent initial puts for a new key from two heads", async () => {
+    const blocks = new TestBlockstore();
+
+    // Bootstrap pail with a different key
+    const v0 = await initPail(blocks, "bootstrap.md", "# Bootstrap\n");
+
+    // Two concurrent puts for a NEW key "doc.md" that doesn't exist yet
+    // Both branch from v0, so both will create "initial" entries
+    const { mdEntryCid: cid1, additions: a1 } = (await mdsync.put(
+      blocks,
+      v0,
+      "doc.md",
+      "# Doc\n\nFrom replica 1.\n",
+    ))!;
+    await blocks.putMany(a1);
+    const rev1 = await Revision.put(blocks, v0, "doc.md", cid1);
+    await blocks.putMany(rev1.additions);
+    await blocks.put(rev1.revision.event);
+
+    const { mdEntryCid: cid2, additions: a2 } = (await mdsync.put(
+      blocks,
+      v0,
+      "doc.md",
+      "# Doc\n\nFrom replica 2.\n",
+    ))!;
+    await blocks.putMany(a2);
+    const rev2 = await Revision.put(blocks, v0, "doc.md", cid2);
+    await blocks.putMany(rev2.additions);
+    await blocks.put(rev2.revision.event);
+
+    // Merge: ValueView with both heads
+    const { value: merged } = await Value.from(
+      blocks,
+      mockName,
+      rev1.revision,
+      rev2.revision,
+    );
+
+    const result = await mdsync.get(blocks, merged, "doc.md");
+    expect(result).toBeDefined();
+    // Both edits should be present in the resolved document
+    expect(result).toContain("From replica 1.");
+    expect(result).toContain("From replica 2.");
+  });
