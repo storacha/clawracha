@@ -29,6 +29,7 @@ import { resolveAgentWorkspace, getAgentIds } from "./utils/workspace.js";
 import { Agent, Name } from "@storacha/ucn/pail";
 import { extract } from "@storacha/client/delegation";
 import * as z from "zod";
+import { spaceAccess } from "@storacha/client/capability/access";
 
 // Per-workspace sync state
 interface WorkspaceSync {
@@ -607,12 +608,8 @@ export default function plugin(api: OpenClawPluginApi) {
               } as any;
               const uploadDel = await storachaClient.createDelegation(
                 audience,
-                [
-                  "space/blob/add",
-                  "space/index/add",
-                  "upload/add",
-                  "filecoin/offer",
-                ],
+                // @ts-expect-error createDelegation should validate abilities
+                Object.keys(spaceAccess),
               );
               const { ok: archiveBytes } = await uploadDel.archive();
               if (archiveBytes) {
