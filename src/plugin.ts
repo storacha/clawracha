@@ -67,13 +67,7 @@ async function requestWorkspaceUpdate(
   // Mirror resolveGatewayPort from openclaw core
   const DEFAULT_GATEWAY_PORT = 18789;
   let port = DEFAULT_GATEWAY_PORT;
-  const envRaw =
-    process.env.OPENCLAW_GATEWAY_PORT?.trim() ||
-    process.env.CLAWDBOT_GATEWAY_PORT?.trim();
-  if (envRaw) {
-    const parsed = Number.parseInt(envRaw, 10);
-    if (Number.isFinite(parsed) && parsed > 0) port = parsed;
-  } else if (
+  if (
     typeof gatewayConfig.port === "number" &&
     Number.isFinite(gatewayConfig.port) &&
     gatewayConfig.port > 0
