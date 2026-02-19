@@ -610,6 +610,7 @@ export default function plugin(api: OpenClawPluginApi) {
                 audience,
                 // @ts-expect-error createDelegation should validate abilities
                 Object.keys(spaceAccess),
+                { expiration: Infinity },
               );
               const { ok: archiveBytes } = await uploadDel.archive();
               if (archiveBytes) {
