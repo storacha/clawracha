@@ -37,6 +37,7 @@ export async function processChanges(
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
+  console.log("Processing changes:", JSON.stringify(changes, null, 2));
   const mdChanges = changes.filter((c) => isMarkdown(c.path));
   const regularChanges = changes.filter((c) => !isMarkdown(c.path));
 
