@@ -33,6 +33,9 @@ import { WritableCar, makeTempCar } from "./utils/tempcar.js";
 import { Client } from "@storacha/client";
 import { createStorachaClient } from "./utils/client.js";
 import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
+import { extract } from "@storacha/client/delegation";
+import type { EncryptionConfig, DecryptionConfig, EncryptedClient } from "@storacha/encrypt-upload-client/types";
+import { makeEncryptionConfig, makeDecryptionConfig, getEncryptedClient } from "./utils/crypto.js";
 
 /** Engine is either stopped or running with a name and client. */
 type State =
@@ -53,6 +56,9 @@ export class SyncEngine {
   private carFile: WritableCar | null = null;
   private lastSync: number | null = null;
   private syncLock: Promise<void> = Promise.resolve();
+  private encryptionConfig?: EncryptionConfig;
+  private decryptionConfig?: DecryptionConfig;
+  private encryptedClient?: EncryptedClient;
 
   constructor(workspace: string) {
     this.workspace = workspace;
@@ -74,7 +80,6 @@ export class SyncEngine {
       name = await Name.extract(agent, archiveBytes);
     } else if (config.nameDelegation) {
       // Reconstruct from delegation (granted by another device)
-      const { extract } = await import("@storacha/client/delegation");
       const nameBytes = decodeDelegation(config.nameDelegation);
       const { ok: delegation } = await extract(nameBytes);
       if (!delegation) throw new Error("Failed to extract name delegation");
@@ -85,6 +90,32 @@ export class SyncEngine {
     }
 
     this.state = { initialized: true, running: true, name, storachaClient };
+
+    // Set up encryption for private spaces
+    if (config.access?.type === "private") {
+      if (!config.planDelegation) {
+        throw new Error("Private space requires a plan delegation for KMS access");
+      }
+      const planBytes = decodeDelegation(config.planDelegation);
+      const { ok: planDel } = await extract(planBytes);
+      if (!planDel) throw new Error("Failed to extract plan delegation");
+
+      this.encryptionConfig = makeEncryptionConfig(
+        agent,
+        config.spaceDID as `did:key:${string}`,
+        [planDel],
+      );
+
+      // For decrypt, uploadDelegation covers space/content/decrypt
+      const uploadBytes = decodeDelegation(config.uploadDelegation!);
+      const { ok: uploadDel } = await extract(uploadBytes);
+      if (!uploadDel) throw new Error("Failed to extract upload delegation");
+      this.decryptionConfig = makeDecryptionConfig(
+        config.spaceDID as `did:key:${string}`,
+        uploadDel,
+      );
+      this.encryptedClient = await getEncryptedClient(storachaClient);
+    }
 
     try {
       const result = await Revision.resolve(this.blocks, name);
@@ -134,6 +165,7 @@ export class SyncEngine {
       this.blocks,
       (block) => this.carFile!.put(block),
       (block) => this.blocks.put(block),
+      this.encryptionConfig,
     );
     this.pendingOps.push(...pendingOps);
   }
@@ -248,6 +280,8 @@ export class SyncEngine {
     await applyRemoteChanges(changedPaths, entries, this.workspace, {
       blocks: this.blocks,
       current: this.current ?? undefined,
+      encryptedClient: this.encryptedClient,
+      decryptionConfig: this.decryptionConfig,
     });
   }
 
@@ -297,6 +331,8 @@ export class SyncEngine {
       await applyRemoteChanges(allPaths, entries, this.workspace, {
         blocks: this.blocks,
         current: this.current ?? undefined,
+        encryptedClient: this.encryptedClient,
+        decryptionConfig: this.decryptionConfig,
       });
     }
 

@@ -230,13 +230,13 @@ describe("processChanges", () => {
     const blocks = new MemoryBlockstore();
     // Bootstrap with a markdown file via mdsync
     const mdsync = await import("../../src/mdsync/index.js");
-    const { mdEntryCid, additions } = await mdsync.v0Put("# Old\n");
-    for (const b of additions) await blocks.put(b as any);
+    const block = await mdsync.v0Put("# Old\n");
+    await blocks.put(block);
 
     const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
     const agent = await Agent.generate();
     const name = await Name.create(agent);
-    const init = await Revision.v0Put(blocks, "readme.md", mdEntryCid);
+    const init = await Revision.v0Put(blocks, "readme.md", block.cid);
     await storeBlocks(blocks, init.additions);
     await blocks.put(init.revision.event as any);
     const { value } = await (await import("@storacha/ucn/pail/value")).from(blocks, name, init.revision);
@@ -279,13 +279,13 @@ describe("processChanges", () => {
   it("markdown delete → del op", async () => {
     const blocks = new MemoryBlockstore();
     const mdsync = await import("../../src/mdsync/index.js");
-    const { mdEntryCid, additions } = await mdsync.v0Put("# Delete me\n");
-    for (const b of additions) await blocks.put(b as any);
+    const block = await mdsync.v0Put("# Delete me\n");
+    await blocks.put(block);
 
     const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
     const agent = await Agent.generate();
     const name = await Name.create(agent);
-    const init = await Revision.v0Put(blocks, "delete.md", mdEntryCid);
+    const init = await Revision.v0Put(blocks, "delete.md", block.cid);
     await storeBlocks(blocks, init.additions);
     await blocks.put(init.revision.event as any);
     const { value } = await (await import("@storacha/ucn/pail/value")).from(blocks, name, init.revision);
