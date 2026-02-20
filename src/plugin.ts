@@ -9,7 +9,6 @@
 
 import { json as consumeJson } from "stream/consumers";
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import type {
   OpenClawPluginApi,
   OpenClawPluginServiceContext,
@@ -17,7 +16,6 @@ import type {
 } from "openclaw/plugin-sdk";
 import type { SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
-import { encodeDelegation } from "./utils/delegation.js";
 import { resolveAgentWorkspace, getAgentIds } from "./utils/workspace.js";
 import * as z from "zod";
 import {
@@ -29,6 +27,10 @@ import {
   doJoin,
   doGrant,
 } from "./commands.js";
+import { CID } from "multiformats/basics";
+import { CAR } from "@ucanto/core";
+import { identity } from "multiformats/hashes/identity";
+import { base64 } from "multiformats/bases/base64";
 
 const activeSyncers = new Map<string, WorkspaceSync>();
 
@@ -299,7 +301,12 @@ export default function plugin(api: OpenClawPluginApi) {
 
             console.log("\n⏳ Setting up workspace...");
             const result = await doSetup(
-              workspace, agentId, email, spaceName, pluginConfig, config.gateway,
+              workspace,
+              agentId,
+              email,
+              spaceName,
+              pluginConfig,
+              config.gateway,
             );
 
             console.log(`\n🔥 Storacha workspace ready for ${agentId}!`);
@@ -348,9 +355,7 @@ export default function plugin(api: OpenClawPluginApi) {
               config.gateway,
             );
 
-            console.log(
-              `\n🔥 Joined Storacha workspace for ${agentId}!`,
-            );
+            console.log(`\n🔥 Joined Storacha workspace for ${agentId}!`);
             console.log(`Agent DID: ${result.agentDID}`);
             console.log(`Space: ${result.spaceDID ?? "unknown"}`);
             console.log(`Pulled ${result.pullCount} files from remote.`);
@@ -358,8 +363,7 @@ export default function plugin(api: OpenClawPluginApi) {
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
             if (err.stack) console.error(err.stack);
-            if (err.cause?.stack)
-              console.error("Caused by:", err.cause.stack);
+            if (err.cause?.stack) console.error("Caused by:", err.cause.stack);
             process.exit(1);
           }
         });
@@ -367,43 +371,54 @@ export default function plugin(api: OpenClawPluginApi) {
       // --- grant (produces bundle) ---
       clawracha
         .command("grant <target-DID>")
-        .description("Grant another device access to this workspace (outputs a delegation bundle)")
+        .description(
+          "Grant another device access to this workspace (outputs a delegation bundle)",
+        )
         .requiredOption("--agent <id>", "Agent ID")
-        .option("-o, --output <file>", "Write bundle to file instead of base64 stdout")
-        .action(async (targetDID: string, opts: { agent: string; output?: string }) => {
-          try {
-            const { agentId, workspace } = requireAgent(opts.agent);
+        .option(
+          "-o, --output <file>",
+          "Write bundle to file instead of base64 stdout",
+        )
+        .action(
+          async (
+            targetDID: string,
+            opts: { agent: string; output?: string },
+          ) => {
+            try {
+              const { agentId, workspace } = requireAgent(opts.agent);
 
-            if (!targetDID.startsWith("did:")) {
-              console.error("Error: target must be a DID (did:key:z...)");
+              if (!targetDID.startsWith("did:")) {
+                console.error("Error: target must be a DID (did:key:z...)");
+                process.exit(1);
+              }
+
+              console.log("⏳ Creating delegation bundle...");
+              const bundleBytes = await doGrant(
+                workspace,
+                targetDID as `did:${string}:${string}`,
+              );
+
+              if (opts.output) {
+                await fs.writeFile(opts.output, bundleBytes);
+                console.log(`\n🔥 Delegation bundle written to ${opts.output}`);
+              } else {
+                const idCid = CID.createV1(
+                  CAR.code,
+                  identity.digest(bundleBytes),
+                );
+                console.log(`\n🔥 Delegation bundle for ${targetDID}:\n`);
+                console.log(idCid.toString(base64));
+              }
+
+              console.log("\nThe target device should run:");
+              console.log(`  openclaw clawracha join <bundle> --agent <id>`);
+            } catch (err: any) {
+              console.error(`Error: ${err.message}`);
+              if (err.stack) console.error(err.stack);
               process.exit(1);
             }
-
-            console.log("⏳ Creating delegation bundle...");
-            const bundleBytes = await doGrant(
-              workspace,
-              targetDID as `did:${string}:${string}`,
-            );
-
-            if (opts.output) {
-              await fs.writeFile(opts.output, bundleBytes);
-              console.log(`\n🔥 Delegation bundle written to ${opts.output}`);
-            } else {
-              const base64 = Buffer.from(bundleBytes).toString("base64");
-              console.log(`\n🔥 Delegation bundle for ${targetDID}:\n`);
-              console.log(base64);
-            }
-
-            console.log("\nThe target device should run:");
-            console.log(
-              `  openclaw clawracha join <bundle> --agent <id>`,
-            );
-          } catch (err: any) {
-            console.error(`Error: ${err.message}`);
-            if (err.stack) console.error(err.stack);
-            process.exit(1);
-          }
-        });
+          },
+        );
 
       // --- status ---
       clawracha
@@ -434,9 +449,7 @@ export default function plugin(api: OpenClawPluginApi) {
               `Plan delegation: ${deviceConfig.planDelegation ? "✅" : "❌ not set"}`,
             );
             console.log(`Space DID: ${deviceConfig.spaceDID ?? "unknown"}`);
-            console.log(
-              `Access: ${deviceConfig.access?.type ?? "unknown"}`,
-            );
+            console.log(`Access: ${deviceConfig.access?.type ?? "unknown"}`);
             console.log(
               `Name Archive: ${deviceConfig.nameArchive ? "saved" : "not created"}`,
             );
@@ -522,14 +535,13 @@ export default function plugin(api: OpenClawPluginApi) {
         .description("Interactive guided setup for Storacha workspace sync")
         .requiredOption("--agent <id>", "Agent ID")
         .action(async (opts: { agent: string }) => {
-          const { prompt, promptMultiline, choose } = await import("./prompts.js");
+          const { prompt, promptMultiline, choose } =
+            await import("./prompts.js");
 
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
 
-            console.log(
-              "🔥 Welcome to Clawracha — Storacha workspace sync!\n",
-            );
+            console.log("🔥 Welcome to Clawracha — Storacha workspace sync!\n");
 
             // Step 1: Init
             console.log("Step 1: Agent Identity");
@@ -563,7 +575,12 @@ export default function plugin(api: OpenClawPluginApi) {
 
               console.log("\n⏳ Setting up workspace...");
               const result = await doSetup(
-                workspace, agentId, email, spaceName, pluginConfig, config.gateway,
+                workspace,
+                agentId,
+                email,
+                spaceName,
+                pluginConfig,
+                config.gateway,
               );
 
               console.log(`\n🔥 Storacha workspace ready for ${agentId}!`);
@@ -602,14 +619,10 @@ export default function plugin(api: OpenClawPluginApi) {
                 config.gateway,
               );
 
-              console.log(
-                `\n🔥 Joined Storacha workspace for ${agentId}!`,
-              );
+              console.log(`\n🔥 Joined Storacha workspace for ${agentId}!`);
               console.log(`  Agent DID: ${result.agentDID}`);
               console.log(`  Space: ${result.spaceDID ?? "unknown"}`);
-              console.log(
-                `  Pulled ${result.pullCount} files from remote.`,
-              );
+              console.log(`  Pulled ${result.pullCount} files from remote.`);
               console.log("\nSync is now active! 🎉");
             }
           } catch (err: any) {
