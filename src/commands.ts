@@ -260,10 +260,12 @@ export async function doSetup(
 
   // Delegate plan/get from account → clawracha agent
   const accountDID = account.did();
-  const planProofs = tempClient.agent.proofs([{
-    can: "plan/get",
-    with: accountDID,
-  }] as any);
+  const planProofs = tempClient.agent.proofs([
+    {
+      can: "plan/get",
+      with: accountDID,
+    },
+  ] as any);
   const planDelegation = await delegate({
     issuer: tempClient.agent.issuer,
     audience: { did: () => agent.did() } as any,
@@ -314,7 +316,7 @@ async function readBundleArg(arg: string): Promise<Uint8Array> {
     const bytes = await fs.readFile(arg);
     return new Uint8Array(bytes);
   } catch (err: any) {
-    if (err.code !== "ENOENT") throw err;
+    if (err.code !== "ENOENT" && err.code !== "ENAMETOOLONG") throw err;
   }
   // Try as base64
   return Uint8Array.from(Buffer.from(arg, "base64"));
@@ -434,8 +436,7 @@ export async function doGrant(
   }
   const planBytes = decodeDelegation(deviceConfig.planDelegation);
   const { ok: existingPlanDel } = await extract(planBytes);
-  if (!existingPlanDel)
-    throw new Error("Failed to extract plan delegation");
+  if (!existingPlanDel) throw new Error("Failed to extract plan delegation");
   const planDel = await delegate({
     issuer: agent,
     audience,
