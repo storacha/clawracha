@@ -115,7 +115,6 @@ export class SyncEngine {
         agent,
         planDel,
       );
-
       const uploadBytes = decodeDelegation(config.uploadDelegation!);
       const { ok: uploadDel } = await extract(uploadBytes);
       if (!uploadDel) throw new Error("Failed to extract upload delegation");
@@ -129,7 +128,6 @@ export class SyncEngine {
       this.decryptionConfig = makeDecryptionConfig(
         config.spaceDID as `did:key:${string}`,
         uploadDel,
-        [planDelForKMS],
       );
       this.encryptedClient = await getEncryptedClient(storachaClient);
     }
