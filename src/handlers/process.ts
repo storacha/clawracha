@@ -3,6 +3,9 @@
  *
  * Markdown files (.md) are handled via mdsync — CRDT merge rather than
  * whole-file UnixFS replacement. Regular files go through encodeFiles.
+ *
+ * When encryptionConfig is provided (private spaces), content is encrypted
+ * before upload via encryptToBlockStream.
  */
 
 import { CID } from "multiformats/cid";
@@ -14,7 +17,9 @@ import type {
 } from "@storacha/ucn/pail/api";
 import type { Block } from "multiformats";
 import type { FileChange, PailOp } from "../types/index.js";
+import type { EncryptionConfig } from "@storacha/encrypt-upload-client/types";
 import { encodeFiles } from "../utils/encoder.js";
+import { encryptToBlockStream, bytesToBlobLike } from "../utils/crypto.js";
 import * as mdsync from "../mdsync/index.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -27,6 +32,23 @@ export type BlockStore = (block: Block) => Promise<void>;
 
 const isMarkdown = (filePath: string) => filePath.endsWith(".md");
 
+/** Read all blocks from a ReadableStream, sinking each, return the last CID (root). */
+async function drainBlockStream(
+  stream: ReadableStream<Block>,
+  sink: BlockSink,
+): Promise<UnknownLink> {
+  const reader = stream.getReader();
+  let root: UnknownLink | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    root = value.cid;
+    await sink(value as unknown as Block);
+  }
+  if (!root) throw new Error("Empty block stream");
+  return root;
+}
+
 export async function processChanges(
   changes: FileChange[],
   workspace: string,
@@ -34,33 +56,44 @@ export async function processChanges(
   blocks: BlockFetcher,
   sink: BlockSink,
   store?: BlockStore,
+  encryptionConfig?: EncryptionConfig,
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
   const mdChanges = changes.filter((c) => isMarkdown(c.path));
   const regularChanges = changes.filter((c) => !isMarkdown(c.path));
 
-  // --- Regular files (UnixFS encode) ---
+  // --- Regular files ---
   const toEncode = regularChanges
     .filter((c) => c.type !== "unlink")
     .map((c) => c.path);
 
-  const encoded = await encodeFiles(workspace, toEncode);
+  const files: { path: string; rootCID: UnknownLink }[] = [];
 
-  const files = [];
-  for (const file of encoded) {
-    let root: UnknownLink | null = null;
-    const reader = file.blocks.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      root = value.cid;
-      await sink(value as unknown as Block);
+  if (encryptionConfig) {
+    // Private space: encrypt each file
+    for (const relPath of toEncode) {
+      try {
+        const fileBytes = await fs.readFile(path.join(workspace, relPath));
+        const blob = bytesToBlobLike(fileBytes);
+        const encStream = await encryptToBlockStream(blob, encryptionConfig);
+        const rootCID = await drainBlockStream(encStream, sink);
+        files.push({ path: relPath, rootCID });
+      } catch (err: any) {
+        if (err.code === "ENOENT") {
+          console.warn(`File not found during encoding: ${relPath}`);
+          continue;
+        }
+        throw err;
+      }
     }
-    if (!root) {
-      throw new Error(`Failed to encode file: ${file.path}`);
+  } else {
+    // Public space: UnixFS encode
+    const encoded = await encodeFiles(workspace, toEncode);
+    for (const file of encoded) {
+      const rootCID = await drainBlockStream(file.blocks as any, sink);
+      files.push({ path: file.path, rootCID });
     }
-    files.push({ path: file.path, rootCID: root as UnknownLink });
   }
 
   for (const file of files) {
@@ -89,15 +122,29 @@ export async function processChanges(
     if (!block) {
       continue; // No change detected, skip writing a new entry.
     }
-    // Sink single block to CAR for upload, and store locally for future resolveValue calls.
-    await sink(block);
-    if (store) await store(block);
 
-    pendingOps.push({
-      type: "put",
-      key: change.path,
-      value: block.cid as CID,
-    });
+    if (encryptionConfig) {
+      // Private space: encrypt the single-block entry
+      const blob = bytesToBlobLike(block.bytes);
+      const encStream = await encryptToBlockStream(blob, encryptionConfig);
+      const rootCID = await drainBlockStream(encStream, sink);
+      // Store unencrypted block locally for future resolveValue calls
+      if (store) await store(block);
+      pendingOps.push({
+        type: "put",
+        key: change.path,
+        value: rootCID as CID,
+      });
+    } else {
+      // Public space: store block directly
+      await sink(block);
+      if (store) await store(block);
+      pendingOps.push({
+        type: "put",
+        key: change.path,
+        value: block.cid as CID,
+      });
+    }
   }
 
   // --- Deletes (both regular and markdown) ---
