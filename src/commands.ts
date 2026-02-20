@@ -269,7 +269,7 @@ export async function doSetupWithLogin(
   const accessChoice = await choose(
     "\nSpace access type:\n" +
       "  ⚠️  Public — workspace data is accessible by anyone with the CID\n" +
-      "  🔒 Private — data is encrypted via Google KMS (requires paid plan)",
+      "  🔒 Private — data is encrypted (requires paid plan)",
     ["Public", "Private (encrypted)"],
   );
 
