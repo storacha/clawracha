@@ -310,7 +310,7 @@ const resolveValue = async (
   blocks: BlockFetcher,
   current: ValueView,
   key: string,
-  decrypt: (bytes: Uint8Array) => Promise<Uint8Array> = async (x) => x,
+  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<DeserializedMarkdownEntry | undefined> => {
   const mdEntryBlockCid = await Pail.get(blocks, current.root, key);
   if (!mdEntryBlockCid) {
@@ -323,12 +323,17 @@ const resolveValue = async (
   );
   const events = new EventFetcher<Operation>(blocks);
 
+  // Fetch entry bytes: decrypt callback for private spaces, or raw block fetch.
+  const getEntryBytes = async (cid: CID): Promise<Uint8Array> => {
+    if (decrypt) return decrypt(cid);
+    const block = await blocks.get(cid);
+    if (!block) throw new Error(`Could not find block for CID ${cid}`);
+    return block.bytes;
+  };
+
   // Fast path: single head, no merge needed.
   if (current.revision.length === 1) {
-    const block = await blocks.get(mdEntryBlockCid as CID);
-    if (!block)
-      throw new Error(`Could not find block for CID ${mdEntryBlockCid}`);
-    return decodeMarkdownEntry({ bytes: await decrypt(block.bytes) });
+    return decodeMarkdownEntry({ bytes: await getEntryBytes(mdEntryBlockCid as CID) });
   }
 
   // Multi-head: find common ancestor and replay events in causal order.
@@ -348,10 +353,7 @@ const resolveValue = async (
   const rootMDEntryCid = await Pail.get(blocks, root, key);
   let mdEntry: DeserializedMarkdownEntry | undefined;
   if (rootMDEntryCid) {
-    const block = await blocks.get(rootMDEntryCid as CID);
-    if (!block)
-      throw new Error(`Could not find block for CID ${rootMDEntryCid}`);
-    mdEntry = await decodeMarkdownEntry({ bytes: await decrypt(block.bytes) });
+    mdEntry = await decodeMarkdownEntry({ bytes: await getEntryBytes(rootMDEntryCid as CID) });
   }
 
   // Get all events from ancestor → heads, sorted in deterministic causal order.
@@ -394,10 +396,7 @@ const resolveValue = async (
           `Could not find markdown entry for CID ${data.root} and key ${key}`,
         );
       }
-      const entryBlock = await blocks.get(mdEntryCid as CID);
-      if (!entryBlock)
-        throw new Error(`Could not find block for CID ${mdEntryCid}`);
-      const newMDEntry = await decodeMarkdownEntry({ bytes: await decrypt(entryBlock.bytes) });
+      const newMDEntry = await decodeMarkdownEntry({ bytes: await getEntryBytes(mdEntryCid as CID) });
 
       if (newMDEntry.type === "initial") {
         if (mdEntry) {
@@ -443,7 +442,7 @@ export const get = async (
   blocks: BlockFetcher,
   current: ValueView,
   key: string,
-  decrypt?: (bytes: Uint8Array) => Promise<Uint8Array>,
+  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<string | undefined> => {
   const mdEntry = await resolveValue(blocks, current, key, decrypt);
   if (!mdEntry) {
