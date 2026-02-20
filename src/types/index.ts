@@ -37,6 +37,8 @@ export interface DeviceConfig {
   uploadDelegation?: string;
   /** Name → agent delegation for pail sync (base64 archive) */
   nameDelegation?: string;
+  /** Plan/get delegation for KMS access in private spaces (base64 archive) */
+  planDelegation?: string;
   /** Space DID extracted from upload delegation */
   spaceDID?: string;
   /** Space access type — determines if content is encrypted */
