@@ -24,6 +24,9 @@ import {
 import { Agent, Name } from "@storacha/ucn/pail";
 import { extract } from "@storacha/client/delegation";
 import { delegate } from "@ucanto/core";
+import { CID } from "multiformats/basics";
+import { base64 } from "multiformats/bases/base64";
+import { identity } from "multiformats/hashes/identity";
 
 // --- Per-workspace sync state (returned by startWorkspaceSync) ---
 
@@ -319,7 +322,14 @@ async function readBundleArg(arg: string): Promise<Uint8Array> {
     if (err.code !== "ENOENT" && err.code !== "ENAMETOOLONG") throw err;
   }
   // Try as base64
-  return Uint8Array.from(Buffer.from(arg, "base64"));
+  const cid = CID.parse(arg, base64);
+  if (cid.multihash.code !== identity.code) {
+    console.error(
+      `Error: failed to read proof. Must be identity CID. Fetching of remote proof CARs not supported by this command yet`,
+    );
+    throw new Error("Invalid proof CAR argument");
+  }
+  return cid.multihash.digest;
 }
 
 export async function doJoin(
