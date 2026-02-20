@@ -310,6 +310,7 @@ const resolveValue = async (
   blocks: BlockFetcher,
   current: ValueView,
   key: string,
+  decrypt: (bytes: Uint8Array) => Promise<Uint8Array> = async (x) => x,
 ): Promise<DeserializedMarkdownEntry | undefined> => {
   const mdEntryBlockCid = await Pail.get(blocks, current.root, key);
   if (!mdEntryBlockCid) {
@@ -327,7 +328,7 @@ const resolveValue = async (
     const block = await blocks.get(mdEntryBlockCid as CID);
     if (!block)
       throw new Error(`Could not find block for CID ${mdEntryBlockCid}`);
-    return decodeMarkdownEntry(block);
+    return decodeMarkdownEntry({ bytes: await decrypt(block.bytes) });
   }
 
   // Multi-head: find common ancestor and replay events in causal order.
@@ -350,7 +351,7 @@ const resolveValue = async (
     const block = await blocks.get(rootMDEntryCid as CID);
     if (!block)
       throw new Error(`Could not find block for CID ${rootMDEntryCid}`);
-    mdEntry = await decodeMarkdownEntry(block);
+    mdEntry = await decodeMarkdownEntry({ bytes: await decrypt(block.bytes) });
   }
 
   // Get all events from ancestor → heads, sorted in deterministic causal order.
@@ -396,7 +397,7 @@ const resolveValue = async (
       const entryBlock = await blocks.get(mdEntryCid as CID);
       if (!entryBlock)
         throw new Error(`Could not find block for CID ${mdEntryCid}`);
-      const newMDEntry = await decodeMarkdownEntry(entryBlock);
+      const newMDEntry = await decodeMarkdownEntry({ bytes: await decrypt(entryBlock.bytes) });
 
       if (newMDEntry.type === "initial") {
         if (mdEntry) {
@@ -442,8 +443,9 @@ export const get = async (
   blocks: BlockFetcher,
   current: ValueView,
   key: string,
+  decrypt?: (bytes: Uint8Array) => Promise<Uint8Array>,
 ): Promise<string | undefined> => {
-  const mdEntry = await resolveValue(blocks, current, key);
+  const mdEntry = await resolveValue(blocks, current, key, decrypt);
   if (!mdEntry) {
     return undefined;
   }
