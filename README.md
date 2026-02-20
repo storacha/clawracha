@@ -1,172 +1,174 @@
 # @storacha/clawracha
 
-OpenClaw plugin for Storacha workspace sync via UCN Pail.
+Sync [OpenClaw](https://github.com/openclaw/openclaw) agent workspaces to [Storacha](https://storacha.network) — decentralized, encrypted, multi-device.
 
-## Overview
+No servers. No accounts to share. Just UCAN delegations and content-addressed data.
 
-Clawracha syncs OpenClaw agent workspaces to Storacha using UCN (User Controlled Names) with Pail — a CRDT-based KV store backed by merkle clocks.
+## What It Does
 
-**Features:**
+Clawracha watches your agent's workspace for file changes and syncs them to a Storacha Space via [UCN Pail](https://github.com/storacha/ucn) — a CRDT key-value store backed by merkle clocks. Multiple devices can sync the same workspace without conflicts.
 
-- 🔄 Live sync of workspace files (`.md` by default)
-- 🌐 Multi-device, multi-user via UCAN delegation
-- 🔀 CRDT-based conflict resolution (merkle clock)
-- 📦 Local-first with network sync
+- **Regular files** → content-addressed via UnixFS, stored as CIDs
+- **Markdown files** → CRDT merge via [md-merge](https://github.com/storacha/md-merge) — concurrent edits merge automatically, no conflicts
+- **Private spaces** → end-to-end encrypted via KMS before upload
+- **Multi-device** → delegation bundles let you grant access to other devices
 
-## Installation
+## Quick Start
 
-```bash
-openclaw plugins install @storacha/clawracha
-```
-
-## Setup
-
-Setup is done via CLI commands on the host (not slash commands in chat).
-
-All commands require `--agent <id>` to specify which agent workspace to configure.
-
-### Step 1: Initialize the agent
+### 1. Install
 
 ```bash
-openclaw clawracha init --agent <id>
+# In your OpenClaw project
+pnpm add @storacha/clawracha
 ```
 
-Generates an agent identity and displays the Agent DID. You'll need this DID to create delegations.
+Add to your OpenClaw config (`openclaw.config.json` or equivalent):
 
-### Step 2: Choose your path
+```json
+{
+  "plugins": {
+    "clawracha": {
+      "enabled": true
+    }
+  }
+}
+```
 
-**New workspace (first device):**
+### 2. Initialize
+
+Generate an agent identity for your workspace:
 
 ```bash
-openclaw clawracha setup <delegation> --agent <id>
+openclaw clawracha init --agent myagent
 ```
 
-`<delegation>` can be a file path (raw CAR) or a base64 CID string. Have the space owner create an upload delegation for your Agent DID, then import it.
+This creates a `.storacha/config.json` in the agent's workspace with a fresh Ed25519 keypair.
 
-**Join an existing workspace (additional devices):**
+### 3. Set Up a New Workspace
 
 ```bash
-openclaw clawracha join <upload-delegation> <name-delegation> --agent <id>
+openclaw clawracha setup --agent myagent
 ```
 
-Get both delegations by running `openclaw clawracha grant` on the existing device. Arguments can be file paths or base64 CID strings. The join command pulls all remote files before the watcher starts.
+This will:
+1. Ask for your Storacha email (sends a confirmation link)
+2. Wait for email confirmation and payment plan verification
+3. Ask you to choose **Public** or **Private (encrypted)** access
+4. Create a new Storacha Space
+5. Generate delegations (upload, name, plan)
+6. Do an initial sync of existing workspace files
+7. Start watching for changes
 
-### Grant access to another device
+### 4. Add Another Device
+
+On the **existing device** (the one already set up):
 
 ```bash
-openclaw clawracha grant <target-agent-DID> --agent <id>
+openclaw clawracha grant did:key:z6Mk... --agent myagent
 ```
 
-Generates upload and name delegations for the target device.
+This outputs a delegation bundle (a base64 string). Copy it.
 
-### Check status
+On the **new device**:
 
 ```bash
-openclaw clawracha status --agent <id>
+openclaw clawracha init --agent myagent
+openclaw clawracha join <paste-bundle-here> --agent myagent
 ```
 
-After setup, restart the gateway to start syncing:
+The new device pulls all existing files and starts syncing.
+
+### Interactive Setup
+
+Don't want to remember the steps? Use the guided flow:
 
 ```bash
-openclaw gateway restart
+openclaw clawracha onboard --agent myagent
 ```
 
-## How It Works
+This walks you through init → setup/join interactively.
 
-```
-Workspace Files                 UCN Pail KV Store
-================                ================
-/AGENTS.md          ────►       "AGENTS.md" → bafk...xyz
-/SOUL.md            ────►       "SOUL.md" → bafk...abc
-/memory/2026-02-10.md ────►     "memory/2026-02-10.md" → bafk...123
-```
+## CLI Commands
 
-The sync loop:
+All commands require `--agent <id>` to specify which agent workspace to operate on.
 
-1. **Watch** - File watcher detects changes
-2. **Encode** - Files → UnixFS DAG → root CID
-3. **Diff** - Compare local vs pail entries
-4. **Batch** - Generate UCN revision with all changes
-5. **Upload** - All blocks → CAR → Storacha
-6. **Apply** - Remote changes → local filesystem
+| Command | Description |
+|---------|-------------|
+| `init --agent <id>` | Generate agent identity (Ed25519 keypair) |
+| `setup --agent <id>` | Create a new Storacha Space via login |
+| `join <bundle> --agent <id>` | Join an existing workspace from a delegation bundle |
+| `grant <DID> --agent <id>` | Create a delegation bundle for another device |
+| `status --agent <id>` | Show sync status (delegations, space, running state) |
+| `inspect --agent <id>` | Debug internal state (pail entries, pending ops, revisions) |
+| `onboard --agent <id>` | Interactive guided setup |
 
-## Configuration
+### Grant Options
 
-In your OpenClaw config:
+```bash
+# Output bundle as base64 to stdout (default)
+openclaw clawracha grant did:key:z6Mk... --agent myagent
 
-```yaml
-plugins:
-  entries:
-    storacha-sync:
-      enabled: true
-      config:
-        watchPatterns:
-          - "**/*.md"
-        ignorePatterns:
-          - ".git"
-          - "node_modules"
-          - ".storacha"
+# Write bundle to a file instead
+openclaw clawracha grant did:key:z6Mk... --agent myagent -o bundle.car
 ```
 
 ## Agent Tools
 
-The plugin provides tools for manual sync control:
+When the plugin is running, agents get two MCP tools:
 
-- `storacha_sync_status` - Get current sync status
-- `storacha_sync_now` - Trigger immediate sync
+- **`storacha_sync_status`** — Check current sync state (running, last sync, entry count, pending changes)
+- **`storacha_sync_now`** — Trigger an immediate sync cycle
 
-## Architecture
+## How Sync Works
 
+1. **File watcher** (chokidar) detects changes in the workspace
+2. Changed files are encoded:
+   - Regular files → UnixFS DAG blocks
+   - Markdown files → CRDT entry via md-merge (RGA tree + event history)
+   - Private spaces → encrypted before encoding
+3. Changes become pail operations (put/del)
+4. Operations are batched into a UCN revision and published
+5. All blocks are packed into a CAR file and uploaded to Storacha
+6. Remote changes from other devices are pulled, diffed, and applied locally
+
+See [docs/architecture.md](docs/architecture.md) for the full technical deep-dive.
+
+## Configuration
+
+In your OpenClaw plugin config:
+
+```json
+{
+  "plugins": {
+    "clawracha": {
+      "enabled": true,
+      "watchPatterns": ["**/*"],
+      "ignorePatterns": [".git", "node_modules", ".storacha"]
+    }
+  }
+}
 ```
-┌─────────────────────────────────────────────────────────┐
-│  OpenClaw Agent Workspace                               │
-│  ┌─────────────────┐     ┌─────────────────┐            │
-│  │  Workspace      │◄───►│  File Watcher   │            │
-│  │  *.md files     │     │  (chokidar)     │            │
-│  └─────────────────┘     └────────┬────────┘            │
-│           │                       │                     │
-│           ▼                       ▼                     │
-│  ┌─────────────────┐     ┌─────────────────┐            │
-│  │  .storacha/     │     │  Sync Engine    │            │
-│  │  ├─ config.json │◄───►│  (UCN Pail)     │            │
-│  │  └─ blocks/     │     └────────┬────────┘            │
-│  └─────────────────┘              │                     │
-└───────────────────────────────────┼─────────────────────┘
-                                    │
-                                    ▼ publish/resolve
-┌───────────────────────────────────────────────────────┐
-│  Storacha Network                                     │
-│  ┌───────────────────┐  ┌───────────────────────────┐ │
-│  │  UCN Rendezvous   │  │  Storage Nodes            │ │
-│  │  (clock/head)     │  │  (blob storage)           │ │
-│  └───────────────────┘  └───────────────────────────┘ │
-└───────────────────────────────────────────────────────┘
-```
 
-## Local Data
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `false` | Enable/disable the sync plugin |
+| `watchPatterns` | `["**/*"]` | Glob patterns for files to sync |
+| `ignorePatterns` | `[".git", "node_modules", ".storacha"]` | Glob patterns to exclude |
 
-The plugin stores data in `.storacha/` within the workspace:
+## Public vs Private Spaces
 
-- `config.json` - Agent key, delegations, name archive (NOT synced)
-- `blocks/` - Local block cache (NOT synced)
+During setup, you choose the access type:
 
-Add `.storacha/` to your `.gitignore`.
+- **Public** — Files are stored as plaintext on IPFS/Filecoin. Anyone with the CID can access them.
+- **Private (encrypted)** — Files are encrypted via Storacha's KMS before upload. Only devices with the proper delegations can decrypt.
 
-## Status
+Private spaces use `@storacha/encrypt-upload-client` with Google KMS for key management. The plan delegation grants KMS access, and decrypt delegations are scoped per-CID with 15-minute expiry.
 
-🚧 **Work in Progress**
+## Requirements
 
-- [x] Plugin scaffold
-- [x] Tiered blockstore (memory → disk → gateway)
-- [x] File encoder (UnixFS)
-- [x] Differ (local ↔ pail)
-- [x] Sync engine (UCN Pail batch)
-- [x] File watcher
-- [x] OpenClaw plugin integration
-- [ ] CAR upload to Storacha
-- [ ] Remote file download/apply
-- [ ] Encryption (encrypt-upload-client)
-- [ ] Full test coverage
+- Node.js ≥ 20
+- OpenClaw ≥ 2026.0.0
+- A [Storacha account](https://console.storacha.network) with an active payment plan
 
 ## License
 
