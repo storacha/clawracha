@@ -8,6 +8,8 @@
  */
 
 import { json as consumeJson } from "stream/consumers";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type {
   OpenClawPluginApi,
   OpenClawPluginServiceContext,
@@ -15,26 +17,17 @@ import type {
 } from "openclaw/plugin-sdk";
 import type { SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
-import { createStorachaClient } from "./utils/client.js";
-import {
-  decodeDelegation,
-  encodeDelegation,
-} from "./utils/delegation.js";
+import { encodeDelegation } from "./utils/delegation.js";
 import { resolveAgentWorkspace, getAgentIds } from "./utils/workspace.js";
-import { Agent, Name } from "@storacha/ucn/pail";
-import { extract } from "@storacha/client/delegation";
 import * as z from "zod";
-import { spaceAccess } from "@storacha/client/capability/access";
 import {
   type WorkspaceSync,
   loadDeviceConfig,
-  saveDeviceConfig,
-  requestWorkspaceUpdate,
   startWorkspaceSync,
   doInit,
   doSetup,
-  doSetupWithLogin,
   doJoin,
+  doGrant,
 } from "./commands.js";
 
 const activeSyncers = new Map<string, WorkspaceSync>();
@@ -81,8 +74,6 @@ export default function plugin(api: OpenClawPluginApi) {
     const updateParams = paramsResult.data;
     const sync = activeSyncers.get(updateParams.workspace);
     if (sync) {
-      // stop active sync engine if present
-      // waiting for any active syncs to flush.
       await sync.watcher.stop();
       await sync.watcher.forceFlush();
       await sync.engine.stop();
@@ -118,7 +109,7 @@ export default function plugin(api: OpenClawPluginApi) {
             workspace,
             agentId,
             pluginConfig,
-            false, // Don't emit "add" events for existing files on startup (handled by initial scan)
+            false,
             ctx.logger,
           );
           if (sync) {
@@ -151,7 +142,7 @@ export default function plugin(api: OpenClawPluginApi) {
     },
   });
 
-  // --- Agent tools (keyed by workspace dir) ---
+  // --- Agent tools ---
 
   api.registerTool({
     name: "storacha_sync_status",
@@ -222,7 +213,6 @@ export default function plugin(api: OpenClawPluginApi) {
         .command("clawracha")
         .description("Storacha workspace sync commands");
 
-      // Helper to resolve workspace from --agent
       function requireAgent(agentId: string | undefined): {
         agentId: string;
         workspace: string;
@@ -259,10 +249,10 @@ export default function plugin(api: OpenClawPluginApi) {
               } else {
                 console.log("\nNext step — choose one:");
                 console.log(
-                  `  New workspace:  openclaw clawracha setup <delegation> --agent ${agentId}`,
+                  `  New workspace:  openclaw clawracha setup --agent ${agentId}`,
                 );
                 console.log(
-                  `  Join existing:  openclaw clawracha join <upload> <name> --agent ${agentId}`,
+                  `  Join existing:  openclaw clawracha join <bundle> --agent ${agentId}`,
                 );
               }
               return;
@@ -272,10 +262,10 @@ export default function plugin(api: OpenClawPluginApi) {
             console.log(`Agent DID: ${result.agentDID}`);
             console.log("\nNext step — choose one:");
             console.log(
-              `  New workspace:  openclaw clawracha setup <delegation> --agent ${agentId}`,
+              `  New workspace:  openclaw clawracha setup --agent ${agentId}`,
             );
             console.log(
-              `  Join existing:  openclaw clawracha join <upload> <name> --agent ${agentId}`,
+              `  Join existing:  openclaw clawracha join <bundle> --agent ${agentId}`,
             );
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
@@ -284,14 +274,14 @@ export default function plugin(api: OpenClawPluginApi) {
           }
         });
 
-      // --- setup ---
+      // --- setup (login-based only) ---
       clawracha
-        .command("setup [delegation]")
+        .command("setup")
         .description(
-          "Set up a NEW workspace. Without args, logs into Storacha interactively. With <delegation>, uses a pre-created delegation.",
+          "Set up a NEW workspace via Storacha login (creates space, generates delegations)",
         )
         .requiredOption("--agent <id>", "Agent ID")
-        .action(async (delegationArg: string | undefined, opts: { agent: string }) => {
+        .action(async (opts: { agent: string }) => {
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -303,28 +293,23 @@ export default function plugin(api: OpenClawPluginApi) {
               process.exit(1);
             }
 
-            let result;
-            if (!delegationArg) {
-              const { prompt } = await import("./prompts.js");
-              const email = await prompt("Storacha email: ");
-              const spaceName = await prompt("Space name: ");
-              result = await doSetupWithLogin(
-                workspace, agentId, email, spaceName, pluginConfig, config.gateway,
-              );
-            } else {
-              result = await doSetup(
-                workspace, agentId, delegationArg, pluginConfig, config.gateway,
-              );
-            }
+            const { prompt } = await import("./prompts.js");
+            const email = await prompt("Storacha email: ");
+            const spaceName = await prompt("Space name: ");
 
-            console.log(`🔥 Storacha workspace ready for ${agentId}!`);
+            console.log("\n⏳ Setting up workspace...");
+            const result = await doSetup(
+              workspace, agentId, email, spaceName, pluginConfig, config.gateway,
+            );
+
+            console.log(`\n🔥 Storacha workspace ready for ${agentId}!`);
             console.log(`Agent DID: ${result.agentDID}`);
             console.log(`Space: ${result.spaceDID ?? "unknown"}`);
             console.log(
               `\nTo add another device, run \`openclaw clawracha grant <their-DID> --agent ${agentId}\` here,`,
             );
             console.log(
-              `then \`openclaw clawracha join <upload> <name> --agent <id>\` on the other device.`,
+              `then \`openclaw clawracha join <bundle> --agent <id>\` on the other device.`,
             );
             console.log("\nSync is now active (no gateway restart needed).");
           } catch (err: any) {
@@ -335,62 +320,57 @@ export default function plugin(api: OpenClawPluginApi) {
           }
         });
 
-      // --- join ---
+      // --- join (single bundle arg) ---
       clawracha
-        .command("join <upload-delegation> <name-delegation>")
+        .command("join <bundle>")
         .description(
-          "Join an existing workspace from another device. Arguments are file paths or base64 CID strings.",
+          "Join an existing workspace from another device. Bundle is a file path or base64 string from `grant`.",
         )
         .requiredOption("--agent <id>", "Agent ID")
-        .action(
-          async (
-            uploadArg: string,
-            nameArg: string,
-            opts: { agent: string },
-          ) => {
-            try {
-              const { agentId, workspace } = requireAgent(opts.agent);
+        .action(async (bundleArg: string, opts: { agent: string }) => {
+          try {
+            const { agentId, workspace } = requireAgent(opts.agent);
 
-              const deviceConfig = await loadDeviceConfig(workspace);
-              if (!deviceConfig?.agentKey) {
-                console.error(
-                  `Run \`openclaw clawracha init --agent ${agentId}\` first.`,
-                );
-                process.exit(1);
-              }
-
-              const result = await doJoin(
-                workspace,
-                agentId,
-                uploadArg,
-                nameArg,
-                pluginConfig,
-                config.gateway,
+            const deviceConfig = await loadDeviceConfig(workspace);
+            if (!deviceConfig?.agentKey) {
+              console.error(
+                `Run \`openclaw clawracha init --agent ${agentId}\` first.`,
               );
-
-              console.log(
-                `🔥 Joined existing Storacha workspace for ${agentId}!`,
-              );
-              console.log(`Agent DID: ${result.agentDID}`);
-              console.log(`Space: ${result.spaceDID ?? "unknown"}`);
-              console.log(`Pulled ${result.pullCount} files from remote.`);
-              console.log("\nSync is now active (no gateway restart needed).");
-            } catch (err: any) {
-              console.error(`Error: ${err.message}`);
-              if (err.stack) console.error(err.stack);
-              if (err.cause?.stack)
-                console.error("Caused by:", err.cause.stack);
               process.exit(1);
             }
-          },
-        );
 
-      // --- grant ---
+            console.log("⏳ Joining workspace...");
+            const result = await doJoin(
+              workspace,
+              agentId,
+              bundleArg,
+              pluginConfig,
+              config.gateway,
+            );
+
+            console.log(
+              `\n🔥 Joined Storacha workspace for ${agentId}!`,
+            );
+            console.log(`Agent DID: ${result.agentDID}`);
+            console.log(`Space: ${result.spaceDID ?? "unknown"}`);
+            console.log(`Pulled ${result.pullCount} files from remote.`);
+            console.log("\nSync is now active (no gateway restart needed).");
+          } catch (err: any) {
+            console.error(`Error: ${err.message}`);
+            if (err.stack) console.error(err.stack);
+            if (err.cause?.stack)
+              console.error("Caused by:", err.cause.stack);
+            process.exit(1);
+          }
+        });
+
+      // --- grant (produces bundle) ---
       clawracha
         .command("grant <target-DID>")
-        .description("Grant another device access to this workspace")
+        .description("Grant another device access to this workspace (outputs a delegation bundle)")
         .requiredOption("--agent <id>", "Agent ID")
-        .action(async (targetDID: string, opts: { agent: string }) => {
+        .option("-o, --output <file>", "Write bundle to file instead of base64 stdout")
+        .action(async (targetDID: string, opts: { agent: string; output?: string }) => {
           try {
             const { agentId, workspace } = requireAgent(opts.agent);
 
@@ -399,75 +379,24 @@ export default function plugin(api: OpenClawPluginApi) {
               process.exit(1);
             }
 
-            const deviceConfig = await loadDeviceConfig(workspace);
-            if (!deviceConfig) {
-              console.error(
-                `Not initialized. Run \`openclaw clawracha init --agent ${agentId}\` first.`,
-              );
-              process.exit(1);
-            }
+            console.log("⏳ Creating delegation bundle...");
+            const bundleBytes = await doGrant(
+              workspace,
+              targetDID as `did:${string}:${string}`,
+            );
 
-            const results: string[] = [];
-
-            // Re-delegate upload capability
-            if (deviceConfig.uploadDelegation) {
-              const storachaClient = await createStorachaClient(deviceConfig);
-              const audience = {
-                did: () => targetDID as `did:${string}:${string}`,
-              } as any;
-              const uploadDel = await storachaClient.createDelegation(
-                audience,
-                Object.keys(spaceAccess),
-                { expiration: Infinity },
-              );
-              const { ok: archiveBytes } = await uploadDel.archive();
-              if (archiveBytes) {
-                results.push(
-                  `Upload delegation:\n${encodeDelegation(archiveBytes)}`,
-                );
-              }
+            if (opts.output) {
+              await fs.writeFile(opts.output, bundleBytes);
+              console.log(`\n🔥 Delegation bundle written to ${opts.output}`);
             } else {
-              results.push("⚠️ No upload delegation to re-delegate.");
+              const base64 = Buffer.from(bundleBytes).toString("base64");
+              console.log(`\n🔥 Delegation bundle for ${targetDID}:\n`);
+              console.log(base64);
             }
 
-            // Re-delegate name capability
-
-            const agent = Agent.parse(deviceConfig.agentKey);
-
-            let name;
-            if (deviceConfig.nameArchive) {
-              const archiveBytes = decodeDelegation(deviceConfig.nameArchive);
-              name = await Name.extract(agent, archiveBytes);
-            } else if (deviceConfig.nameDelegation) {
-              const nameBytes = decodeDelegation(deviceConfig.nameDelegation);
-              const { ok: nameDel } = await extract(nameBytes);
-              if (nameDel) {
-                name = Name.from(agent, [nameDel]);
-              }
-            }
-
-            if (name) {
-              const nameDel = await name.grant(
-                targetDID as `did:${string}:${string}`,
-              );
-              const { ok: archiveBytes } = await nameDel.archive();
-              if (archiveBytes) {
-                results.push(
-                  `Name delegation:\n${encodeDelegation(archiveBytes)}`,
-                );
-              }
-            } else {
-              results.push("⚠️ No name state available to grant from.");
-            }
-
-            console.log(`🔥 Delegations for ${targetDID}:\n`);
-            for (const r of results) {
-              console.log(r);
-              console.log();
-            }
-            console.log("The target device should run:");
+            console.log("\nThe target device should run:");
             console.log(
-              `  openclaw clawracha join <upload-delegation> <name-delegation> --agent <id>`,
+              `  openclaw clawracha join <bundle> --agent <id>`,
             );
           } catch (err: any) {
             console.error(`Error: ${err.message}`);
@@ -501,7 +430,13 @@ export default function plugin(api: OpenClawPluginApi) {
             console.log(
               `Name delegation: ${deviceConfig.nameDelegation ? "✅" : "❌ not set"}`,
             );
+            console.log(
+              `Plan delegation: ${deviceConfig.planDelegation ? "✅" : "❌ not set"}`,
+            );
             console.log(`Space DID: ${deviceConfig.spaceDID ?? "unknown"}`);
+            console.log(
+              `Access: ${deviceConfig.access?.type ?? "unknown"}`,
+            );
             console.log(
               `Name Archive: ${deviceConfig.nameArchive ? "saved" : "not created"}`,
             );
@@ -527,6 +462,7 @@ export default function plugin(api: OpenClawPluginApi) {
             process.exit(1);
           }
         });
+
       // --- inspect ---
       clawracha
         .command("inspect")
@@ -544,7 +480,6 @@ export default function plugin(api: OpenClawPluginApi) {
               return;
             }
 
-            // Use active syncer if available, otherwise spin up temporary engine
             let engine: SyncEngine;
             const activeSync = activeSyncers.get(workspace);
             if (activeSync) {
@@ -620,44 +555,16 @@ export default function plugin(api: OpenClawPluginApi) {
             );
 
             if (choice === "NEW workspace") {
-              // --- Setup path ---
+              // --- Setup path (login only) ---
               console.log("\n📦 New Workspace Setup\n");
 
-              const method = await choose(
-                "How do you want to set up your space?",
-                ["Login to Storacha", "Provide delegation from Storacha CLI"],
+              const email = await prompt("Storacha email: ");
+              const spaceName = await prompt("Space name: ");
+
+              console.log("\n⏳ Setting up workspace...");
+              const result = await doSetup(
+                workspace, agentId, email, spaceName, pluginConfig, config.gateway,
               );
-
-              let result;
-              if (method === "Login to Storacha") {
-                const email = await prompt("Storacha email: ");
-                const spaceName = await prompt("Space name: ");
-                console.log("\n⏳ Setting up workspace...");
-                result = await doSetupWithLogin(
-                  workspace, agentId, email, spaceName, pluginConfig, config.gateway,
-                );
-              } else {
-                console.log(
-                  "You need a Storacha upload delegation for this agent.",
-                );
-                console.log("On a machine with the Storacha CLI, run:\n");
-                console.log(
-                  `  storacha delegation create ${initResult.agentDID} --base64\n`,
-                );
-
-                const delegationInput = await promptMultiline(
-                  "Paste your upload delegation here:",
-                );
-                if (!delegationInput) {
-                  console.error("No delegation provided. Aborting.");
-                  process.exit(1);
-                }
-
-                console.log("\n⏳ Setting up workspace...");
-                result = await doSetup(
-                  workspace, agentId, delegationInput, pluginConfig, config.gateway,
-                );
-              }
 
               console.log(`\n🔥 Storacha workspace ready for ${agentId}!`);
               console.log(`  Agent DID: ${result.agentDID}`);
@@ -668,32 +575,21 @@ export default function plugin(api: OpenClawPluginApi) {
               );
               console.log("\nSync is now active! 🎉");
             } else {
-              // --- Join path ---
+              // --- Join path (single bundle) ---
               console.log("\n🤝 Join Existing Workspace\n");
               console.log(
-                "You need someone with access to grant you delegations.",
+                "You need a delegation bundle from someone with access.",
               );
               console.log("Ask them to run:\n");
               console.log(
                 `  openclaw clawracha grant ${initResult.agentDID} --agent <their-agent-id>\n`,
               );
-              console.log(
-                "They'll get two delegations to share with you.\n",
-              );
 
-              const uploadInput = await promptMultiline(
-                "Paste the upload delegation here:",
+              const bundleInput = await promptMultiline(
+                "Paste the delegation bundle here:",
               );
-              if (!uploadInput) {
-                console.error("No upload delegation provided. Aborting.");
-                process.exit(1);
-              }
-
-              const nameInput = await promptMultiline(
-                "Paste the name delegation here:",
-              );
-              if (!nameInput) {
-                console.error("No name delegation provided. Aborting.");
+              if (!bundleInput) {
+                console.error("No bundle provided. Aborting.");
                 process.exit(1);
               }
 
@@ -701,8 +597,7 @@ export default function plugin(api: OpenClawPluginApi) {
               const result = await doJoin(
                 workspace,
                 agentId,
-                uploadInput,
-                nameInput,
+                bundleInput,
                 pluginConfig,
                 config.gateway,
               );
