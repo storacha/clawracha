@@ -265,8 +265,21 @@ export async function doSetupWithLogin(
   await account.plan.wait();
   console.log("✅ Payment plan active!");
 
+  const { choose } = await import("./prompts.js");
+  const accessChoice = await choose(
+    "\nSpace access type:\n" +
+      "  ⚠️  Public — workspace data is accessible by anyone with the CID\n" +
+      "  🔒 Private — data is encrypted via Google KMS (requires paid plan)",
+    ["Public", "Private (encrypted)"],
+  );
+
+  const access =
+    accessChoice === "Private (encrypted)"
+      ? { type: "private" as const, encryption: { provider: "google-kms" as const, algorithm: "RSA_DECRYPT_OAEP_3072_SHA256" as const } }
+      : { type: "public" as const };
+
   console.log(`Creating space "${spaceName}"...`);
-  const space = await tempClient.createSpace(spaceName, { account });
+  const space = await tempClient.createSpace(spaceName, { account, access });
   await tempClient.setCurrentSpace(space.did());
 
   // Delegate upload access from the new space to our clawracha agent
