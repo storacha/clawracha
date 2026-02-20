@@ -49,13 +49,10 @@ export async function applyRemoteChanges(
     gateway?: string;
     blocks?: BlockFetcher;
     current?: ValueView;
-    encryptedClient?: EncryptedClient;
-    decryptionConfig?: DecryptionConfig;
-    agent?: Signer;
+    decrypt?: (cid: CID) => Promise<Uint8Array>;
   },
 ): Promise<void> {
   const gateway = options?.gateway ?? DEFAULT_GATEWAY;
-  const isEncrypted = !!(options?.encryptedClient && options?.decryptionConfig);
 
   for (const relativePath of changedPaths) {
     const cid = entries.get(relativePath);
@@ -75,31 +72,18 @@ export async function applyRemoteChanges(
     ) {
       // Markdown: resolve via mdsync CRDT merge.
       // For single-device, unencrypted blocks are stored locally.
-      // TODO: For multi-device private spaces, add decrypt layer to resolveValue.
-      const decrypt = isEncrypted
-        ? makeDecryptFn(
-            options!.encryptedClient!,
-            options!.decryptionConfig!,
-            options!.agent!,
-          )
-        : undefined;
       const content = await mdsync.get(
         options.blocks,
         options.current,
         relativePath,
-        decrypt,
+        options.decrypt,
       );
       if (content != null) {
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, content);
       }
-    } else if (isEncrypted) {
-      // Private space: retrieve and decrypt via EncryptedClient
-      const { stream } = await options!.encryptedClient!.retrieveAndDecryptFile(
-        cid,
-        options!.decryptionConfig!,
-      );
-      const bytes = await drainStream(stream);
+    } else if (options?.decrypt) {
+      const bytes = await options.decrypt(cid);
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, bytes);
     } else {

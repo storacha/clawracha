@@ -44,6 +44,7 @@ import {
   makeDecryptionConfig,
   getEncryptedClient,
   delegatePlanningDelegationToKMS,
+  makeDecryptFn,
 } from "./utils/crypto.js";
 
 /** Engine is either stopped or running with a name and client. */
@@ -248,9 +249,14 @@ export class SyncEngine {
       await applyRemoteChanges(remoteChanges, afterEntries, this.workspace, {
         blocks: this.blocks,
         current: this.current ?? undefined,
-        encryptedClient: this.encryptedClient,
-        decryptionConfig: this.decryptionConfig,
-        agent: name.agent,
+        decrypt:
+          this.decryptionConfig && this.encryptedClient
+            ? makeDecryptFn(
+                this.encryptedClient,
+                this.decryptionConfig,
+                name.agent,
+              )
+            : undefined,
       });
     }
 
@@ -338,9 +344,14 @@ export class SyncEngine {
       await applyRemoteChanges(allPaths, entries, this.workspace, {
         blocks: this.blocks,
         current: this.current ?? undefined,
-        encryptedClient: this.encryptedClient,
-        decryptionConfig: this.decryptionConfig,
-        agent: name.agent,
+        decrypt:
+          this.decryptionConfig && this.encryptedClient
+            ? makeDecryptFn(
+                this.encryptedClient,
+                this.decryptionConfig,
+                name.agent,
+              )
+            : undefined,
       });
     }
 
