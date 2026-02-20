@@ -1,16 +1,15 @@
 /**
  * mdsync — CRDT markdown storage on top of UCN Pail.
  *
- * Stores RGA-backed markdown trees at Pail keys. Each key's value is a
- * MarkdownEntry containing:
+ * Each key's value is a single DAG-CBOR block (DeserializedMarkdownEntry)
+ * containing:
  *   - The current RGA tree (full document state)
  *   - An RGA of MarkdownEvents (causal history scoped to this key)
  *   - The last changeset applied (for incremental replay during merge)
  *
  * On read, if the Pail has multiple heads (concurrent writes), we resolve
  * by walking from the common ancestor forward, replaying each branch's
- * changesets and merging event RGAs — analogous to how Pail itself resolves
- * concurrent root updates.
+ * changesets and merging event RGAs.
  */
 
 import { MemoryBlockstore, withCache } from "@storacha/ucn/block";
@@ -25,17 +24,11 @@ import { Block, CID } from "multiformats";
 import * as cbor from "@ipld/dag-cbor";
 import {
   fromMarkdown,
-  encodeTree,
-  encodeRGA,
   RGA,
-  decodeRGA,
-  decodeTree,
   computeChangeSet,
   applyRGAChangeSet,
-  encodeChangeSet,
   RGATreeRoot,
   RGAChangeSet,
-  decodeChangeSet,
   toMarkdown,
   mergeRGATrees,
   serializeTree,
@@ -95,33 +88,10 @@ const deserializeMarkdownEvent = (obj: unknown): MarkdownEvent => {
   return parseMarkdownEvent(obj);
 };
 
-// ---- On-disk types (CID references, stored in DAG-CBOR) ----
-
-interface MarkdownEntryBase {
-  type: string;
-  /** CID of the DAG-CBOR encoded RGATree — the full current document state. */
-  root: CID;
-  /** CID of the DAG-CBOR encoded event RGA — causal history for this key. */
-  events: CID;
-}
-
-interface MarkdownEntryInitial extends MarkdownEntryBase {
-  type: "initial";
-}
-
-interface MarkdownEntryUpdate extends MarkdownEntryBase {
-  type: "update";
-  /** CID of the DAG-CBOR encoded RGAChangeSet applied in this event. */
-  changeset: CID;
-}
-
-/** Serialized form stored at each Pail key — CID pointers to the actual data blocks. */
-type MarkdownEntry = MarkdownEntryInitial | MarkdownEntryUpdate;
+// ---- In-memory types ----
 
 /** Shorthand for the event RGA type used throughout. */
 type EventRGA = RGA<MarkdownEvent, MarkdownEvent>;
-
-// ---- In-memory types (deserialized, ready to operate on) ----
 
 interface DeserializedMarkdownEntryBase {
   type: string;
@@ -135,11 +105,13 @@ interface DeserializedMarkdownEntryBase {
   events: EventRGA;
 }
 
-interface DeserializedMarkdownEntryInitial extends DeserializedMarkdownEntryBase {
+interface DeserializedMarkdownEntryInitial
+  extends DeserializedMarkdownEntryBase {
   type: "initial";
 }
 
-interface DeserializedMarkdownEntryUpdate extends DeserializedMarkdownEntryBase {
+interface DeserializedMarkdownEntryUpdate
+  extends DeserializedMarkdownEntryBase {
   type: "update";
   /** The changeset that was applied to produce this version of the tree. */
   changeset: RGAChangeSet<MarkdownEvent>;
@@ -162,9 +134,7 @@ const nohierarchyComparator = (a: MarkdownEvent, b: MarkdownEvent) =>
 /**
  * Build a comparator from the event RGA's weighted BFS ordering.
  * Events earlier in the BFS (closer to the root of the causal tree)
- * compare as "less than" later events. This is used as the EventComparator
- * for all RGA tree operations — it determines how concurrent inserts are
- * ordered in the document.
+ * compare as "less than" later events.
  */
 const makeComparator = (
   events: EventRGA,
@@ -177,403 +147,7 @@ const makeComparator = (
     (index.get(a.toString()) ?? -1) - (index.get(b.toString()) ?? -1);
 };
 
-// ---- Serialization helpers ----
-
-interface MarkdownResult {
-  mdEntryCid: CID;
-  additions: Block[];
-}
-
-/**
- * Create the first MarkdownEntry for a key — bootstraps the RGA tree and
- * event RGA from raw markdown. Used when a key doesn't exist yet.
- */
-const firstPut = async (
-  newMarkdown: string,
-  parents: Array<EventLink>,
-): Promise<MarkdownResult> => {
-  const markdownEvent = new MarkdownEvent(parents);
-  const eventRGA = new RGA<MarkdownEvent, MarkdownEvent>(nohierarchyComparator);
-  eventRGA.insert(undefined, markdownEvent, markdownEvent);
-  const eventBlock = await encodeRGA(eventRGA, serializeMarkdownEvent);
-  // Only one event, so comparator is trivial (all nodes have the same event).
-  const rgaRoot = fromMarkdown(newMarkdown, markdownEvent, (a, b) => 0);
-  return serializeMarkdownEntry({
-    type: "initial",
-    root: rgaRoot,
-    events: eventRGA,
-  });
-};
-
-// ---- Public API ----
-
-/**
- * First put into an empty Pail (v0 = no existing revision).
- * Returns the markdown entry CID and blocks to store. Caller is
- * responsible for creating the Pail revision via Revision.v0Put.
- */
-export const v0Put = async (newMarkdown: string): Promise<MarkdownResult> => {
-  return firstPut(newMarkdown, []);
-};
-
-/**
- * Put markdown content at a key in an existing Pail.
- *
- * If the key doesn't exist, creates an initial entry. If it does exist,
- * resolves the current value (merging concurrent heads if needed), computes
- * an RGA changeset against the resolved tree, applies it, and stores the
- * updated entry.
- *
- * Returns the markdown entry CID and blocks to store. Caller is
- * responsible for creating the Pail revision via Revision.put.
- */
-export const put = async (
-  blocks: BlockFetcher,
-  current: ValueView,
-  key: string,
-  newMarkdown: string,
-): Promise<MarkdownResult | null> => {
-  const mdEntry = await resolveValue(blocks, current, key);
-  if (!mdEntry) {
-    // Key doesn't exist yet — bootstrap with firstPut.
-    return firstPut(
-      newMarkdown,
-      current.revision.map((r) => r.event.cid),
-    );
-  }
-  const { events: eventRGA, root: rgaRoot } = mdEntry;
-
-  // Create a new event anchored to the current Pail revision heads.
-  const mdEvent = new MarkdownEvent(current.revision.map((r) => r.event.cid));
-
-  // Insert after the last event in weighted order — this places the new event
-  // deeper than all existing events in the causal tree, correctly representing
-  // that it incorporates all known history.
-  const orderedNodes = eventRGA.toWeightedNodes();
-  eventRGA.insert(orderedNodes[orderedNodes.length - 1].id, mdEvent, mdEvent);
-
-  // Diff the current tree against the new markdown and apply.
-  const changeset = computeChangeSet(rgaRoot, newMarkdown, mdEvent);
-  if (changeset.changes.length === 0) {
-    return null; // No changes to apply, skip writing a new entry.
-  }
-  const comparator = makeComparator(eventRGA);
-  const newRoot = applyRGAChangeSet(rgaRoot, changeset, comparator);
-
-  return serializeMarkdownEntry({
-    type: "update",
-    root: newRoot,
-    events: eventRGA,
-    changeset,
-  });
-};
-
-// ---- Block fetching helpers ----
-
-/** Decode a MarkdownEntry (CID pointers) from a DAG-CBOR block. */
-const getMarkdownEntry = async (
-  blocks: BlockFetcher,
-  mdEntryCid: CID,
-): Promise<MarkdownEntry> => {
-  const mdEntryBlock = await blocks.get(mdEntryCid);
-  if (!mdEntryBlock) {
-    throw new Error(
-      `Could not find markdown entry block for CID ${mdEntryCid}`,
-    );
-  }
-  return (
-    await decode({ bytes: mdEntryBlock.bytes, codec: cbor, hasher: sha256 })
-  ).value as MarkdownEntry;
-};
-
-/** Fetch and decode the event RGA from its block CID. */
-const getEventRGAFromCID = async (
-  blocks: BlockFetcher,
-  eventsCid: CID,
-): Promise<EventRGA> => {
-  const eventBlock = await blocks.get(eventsCid);
-  if (!eventBlock) {
-    throw new Error(`Could not find event block for CID ${eventsCid}`);
-  }
-  const eventRGA = await decodeRGA(
-    eventBlock,
-    parseMarkdownEvent,
-    deserializeMarkdownEvent,
-    nohierarchyComparator,
-  );
-  return eventRGA;
-};
-
-/** Fetch and decode an RGAChangeSet from its block CID. */
-const getRGAChangeSetFromCID = async (
-  blocks: BlockFetcher,
-  changesetCid: CID,
-): Promise<RGAChangeSet<MarkdownEvent>> => {
-  const changesetBlock = await blocks.get(changesetCid);
-  if (!changesetBlock) {
-    throw new Error(`Could not find changeset block for CID ${changesetCid}`);
-  }
-  return await decodeChangeSet(changesetBlock, parseMarkdownEvent);
-};
-
-/** Fetch and decode an RGA tree from its block CID, using the event RGA for ordering. */
-const getRGATreeFromRootCID = async (
-  blocks: BlockFetcher,
-  rootCid: CID,
-  eventRGA: EventRGA,
-): Promise<RGATreeRoot<MarkdownEvent>> => {
-  const comparator = makeComparator(eventRGA);
-  const rootBlock = await blocks.get(rootCid);
-  if (!rootBlock) {
-    throw new Error(`Could not find root block for CID ${rootCid}`);
-  }
-  return await decodeTree(rootBlock, parseMarkdownEvent, comparator);
-};
-
-/**
- * Fully deserialize a MarkdownEntry from its CID — fetches and decodes
- * the entry, event RGA, tree, and (if update) changeset.
- */
-const deserializedMarkdownEntryCID = async (
-  blocks: BlockFetcher,
-  mdEntryCid: CID,
-): Promise<DeserializedMarkdownEntry> => {
-  const mdEntry = await getMarkdownEntry(blocks, mdEntryCid);
-  const eventRGA = await getEventRGAFromCID(blocks, mdEntry.events);
-  const rgaRoot = await getRGATreeFromRootCID(blocks, mdEntry.root, eventRGA);
-  if (mdEntry.type === "initial") {
-    return {
-      type: "initial",
-      root: rgaRoot,
-      events: eventRGA,
-    };
-  }
-
-  const changeset = await getRGAChangeSetFromCID(blocks, mdEntry.changeset);
-  return {
-    type: "update",
-    root: rgaRoot,
-    events: eventRGA,
-    changeset,
-  };
-};
-
-/**
- * Serialize a DeserializedMarkdownEntry to DAG-CBOR blocks.
- * Returns the entry's CID and all blocks that need to be stored
- * (event RGA, tree, changeset if update, and the entry itself).
- */
-const serializeMarkdownEntry = async (
-  entry: DeserializedMarkdownEntry,
-): Promise<MarkdownResult> => {
-  let blocks: Block[] = [];
-  const eventBlock = await encodeRGA(entry.events, serializeMarkdownEvent);
-  blocks.push(eventBlock);
-  const rootBlock = await encodeTree(entry.root);
-  blocks.push(rootBlock);
-  const changesetBlock =
-    entry.type === "update"
-      ? await encodeChangeSet(entry.changeset)
-      : undefined;
-  if (changesetBlock) {
-    blocks.push(changesetBlock);
-  }
-  const mdEntry =
-    entry.type === "initial"
-      ? {
-          type: "initial",
-          root: rootBlock.cid,
-          events: eventBlock.cid,
-        }
-      : {
-          type: "update",
-          root: rootBlock.cid,
-          events: eventBlock.cid,
-          changeset: changesetBlock?.cid,
-        };
-  const mdEntryBlock = await encode({
-    value: mdEntry,
-    codec: cbor,
-    hasher: sha256,
-  });
-  blocks.push(mdEntryBlock);
-  return {
-    mdEntryCid: mdEntryBlock.cid,
-    additions: blocks,
-  };
-};
-
-// ---- Resolution (multi-head merge) ----
-
-/**
- * Resolve the current markdown value for a key, merging concurrent heads.
- *
- * If there's only one head (no concurrent writes), returns the entry directly.
- *
- * If there are multiple heads, finds their common ancestor in the Pail's
- * merkle clock, then replays all events from ancestor → heads in causal order.
- * For each "put" event:
- *   - If "initial": bootstraps the entry (must be the first event for this key)
- *   - If "update": merges the event's causal history into the running event RGA,
- *     then applies the changeset to the running tree using the merged comparator
- * For "del" events: clears the entry (file deleted).
- *
- * This is analogous to how Pail resolves concurrent root updates — walk from
- * common ancestor, replay operations in deterministic order.
- */
-const resolveValue = async (
-  blocks: BlockFetcher,
-  current: ValueView,
-  key: string,
-): Promise<DeserializedMarkdownEntry | undefined> => {
-  const mdEntryBlockCid = await Pail.get(blocks, current.root, key);
-  if (!mdEntryBlockCid) {
-    return undefined;
-  }
-  // Cache event blocks in memory so EventFetcher can find them.
-  blocks = withCache(
-    blocks,
-    new MemoryBlockstore(current.revision.map((r) => r.event)),
-  );
-  const events = new EventFetcher<Operation>(blocks);
-
-  // Fast path: single head, no merge needed.
-  if (current.revision.length === 1) {
-    return await deserializedMarkdownEntryCID(blocks, mdEntryBlockCid as CID);
-  }
-
-  // Multi-head: find common ancestor and replay events in causal order.
-  const ancestor = await CRDT.findCommonAncestor(
-    events,
-    current.revision.map((r) => r.event.cid),
-  );
-  if (!ancestor) {
-    throw new Error(
-      `Could not find common ancestor for revision ${current.revision.map((r) => r.event.cid)}`,
-    );
-  }
-
-  // Start from the ancestor's state for this key (if it existed there).
-  const aevent = await events.get(ancestor);
-  let { root } = aevent.value.data;
-  const rootMDEntryCid = await Pail.get(blocks, root, key);
-  let mdEntry = rootMDEntryCid
-    ? await deserializedMarkdownEntryCID(blocks, rootMDEntryCid as CID)
-    : undefined;
-
-  // Get all events from ancestor → heads, sorted in deterministic causal order.
-  const sorted = await CRDT.findSortedEvents(
-    events,
-    current.revision.map((r) => r.event.cid),
-    ancestor,
-  );
-
-  // Filter to only events that touch this key.
-  const relevantSorted = sorted.filter((e) => {
-    const op = e.value.data;
-    switch (op.type) {
-      case "put":
-        return op.key === key;
-      case "del":
-        return op.key === key;
-      case "batch":
-        return op.ops.some((o) => o.key === key);
-      default:
-        return false;
-    }
-  });
-
-  // Replay each event, building up the merged tree and event history.
-  for (const { value: event } of relevantSorted) {
-    let data = event.data;
-    // Reduce batch operations to the single op for this key.
-    if (data.type === "batch") {
-      const op = data.ops.find((o) => o.key === key);
-      if (!op) {
-        continue;
-      }
-      data = { ...data, ...op };
-    }
-    if (data.type === "put") {
-      // Fetch the MarkdownEntry that was stored with this event.
-      const mdEntryCid = await Pail.get(blocks, data.root, key);
-      if (!mdEntryCid) {
-        throw new Error(
-          `Could not find markdown entry for CID ${data.root} and key ${key}`,
-        );
-      }
-      const newMDEntry = await getMarkdownEntry(blocks, mdEntryCid as CID);
-      if (newMDEntry.type === "initial") {
-        // First write for this key — bootstrap from the stored entry.
-        const newEventRGA = await getEventRGAFromCID(blocks, newMDEntry.events);
-        const newRoot = await getRGATreeFromRootCID(blocks, newMDEntry.root, newEventRGA);
-        if (mdEntry) {
-          // Concurrent initial — two branches independently created this key.
-          // Merge event histories and merge the two RGA trees.
-          mdEntry.events.merge(newEventRGA);
-          const comparator = makeComparator(mdEntry.events);
-          mdEntry = {
-            type: "initial",
-            events: mdEntry.events,
-            root: mergeRGATrees(mdEntry.root, newRoot, comparator),
-          };
-        } else {
-          mdEntry = {
-            type: "initial",
-            events: newEventRGA,
-            root: newRoot,
-          };
-        }
-      } else {
-        // Update — merge event histories, then apply the changeset.
-        if (!mdEntry) {
-          throw new Error(
-            `Expected existing markdown entry for update event, found none for CID ${mdEntryCid}`,
-          );
-        }
-        // Merge the event's causal history into our running history.
-        // RGA merge is commutative — order of merging doesn't matter.
-        const eventRGA = mdEntry.events;
-        eventRGA.merge(await getEventRGAFromCID(blocks, newMDEntry.events));
-        const changeset = await getRGAChangeSetFromCID(
-          blocks,
-          newMDEntry.changeset,
-        );
-        // Rebuild comparator from merged event history, then apply changeset.
-        const comparator = makeComparator(eventRGA);
-        mdEntry = {
-          type: "update",
-          events: eventRGA,
-          root: applyRGAChangeSet(mdEntry.root, changeset, comparator),
-          changeset,
-        };
-      }
-    } else if (data.type === "del") {
-      // Key deleted — clear state. If re-created later, it'll be a new "initial".
-      mdEntry = undefined;
-    }
-  }
-  return mdEntry;
-};
-
-/**
- * Get the current markdown string for a key, resolving concurrent heads.
- * Returns undefined if the key doesn't exist.
- */
-export const get = async (
-  blocks: BlockFetcher,
-  current: ValueView,
-  key: string,
-): Promise<string | undefined> => {
-  const mdEntry = await resolveValue(blocks, current, key);
-  if (!mdEntry) {
-    return undefined;
-  }
-  return toMarkdown(mdEntry.root);
-};
-
-
-// ---- Single-block entry encoding ----
+// ---- Single-block serialization ----
 
 /**
  * Encode a DeserializedMarkdownEntry as a single DAG-CBOR block.
@@ -633,4 +207,245 @@ export const decodeMarkdownEntry = async (
     parseMarkdownEvent,
   );
   return { type: "update", root, events: eventRGA, changeset };
+};
+
+// ---- Core helpers ----
+
+/**
+ * Create the first entry for a key — bootstraps the RGA tree and
+ * event RGA from raw markdown. Used when a key doesn't exist yet.
+ */
+const firstPut = (
+  newMarkdown: string,
+  parents: Array<EventLink>,
+): DeserializedMarkdownEntry => {
+  const markdownEvent = new MarkdownEvent(parents);
+  const eventRGA = new RGA<MarkdownEvent, MarkdownEvent>(
+    nohierarchyComparator,
+  );
+  eventRGA.insert(undefined, markdownEvent, markdownEvent);
+  // Only one event, so comparator is trivial (all nodes have the same event).
+  const rgaRoot = fromMarkdown(newMarkdown, markdownEvent, (a, b) => 0);
+  return {
+    type: "initial",
+    root: rgaRoot,
+    events: eventRGA,
+  };
+};
+
+// ---- Public API ----
+
+/**
+ * First put into an empty Pail (v0 = no existing revision).
+ * Returns a single block to store. Caller is responsible for
+ * creating the Pail revision via Revision.v0Put.
+ */
+export const v0Put = async (newMarkdown: string): Promise<Block> => {
+  const entry = firstPut(newMarkdown, []);
+  return encodeMarkdownEntry(entry);
+};
+
+/**
+ * Put markdown content at a key in an existing Pail.
+ *
+ * If the key doesn't exist, creates an initial entry. If it does exist,
+ * resolves the current value (merging concurrent heads if needed), computes
+ * an RGA changeset against the resolved tree, applies it, and stores the
+ * updated entry.
+ *
+ * Returns a single block to store, or null if no changes detected.
+ * Caller is responsible for creating the Pail revision via Revision.put.
+ */
+export const put = async (
+  blocks: BlockFetcher,
+  current: ValueView,
+  key: string,
+  newMarkdown: string,
+): Promise<Block | null> => {
+  const mdEntry = await resolveValue(blocks, current, key);
+  if (!mdEntry) {
+    // Key doesn't exist yet — bootstrap with firstPut.
+    const entry = firstPut(
+      newMarkdown,
+      current.revision.map((r) => r.event.cid),
+    );
+    return encodeMarkdownEntry(entry);
+  }
+  const { events: eventRGA, root: rgaRoot } = mdEntry;
+
+  // Create a new event anchored to the current Pail revision heads.
+  const mdEvent = new MarkdownEvent(current.revision.map((r) => r.event.cid));
+
+  // Insert after the last event in weighted order.
+  const orderedNodes = eventRGA.toWeightedNodes();
+  eventRGA.insert(orderedNodes[orderedNodes.length - 1].id, mdEvent, mdEvent);
+
+  // Diff the current tree against the new markdown and apply.
+  const changeset = computeChangeSet(rgaRoot, newMarkdown, mdEvent);
+  if (changeset.changes.length === 0) {
+    return null; // No changes to apply.
+  }
+  const comparator = makeComparator(eventRGA);
+  const newRoot = applyRGAChangeSet(rgaRoot, changeset, comparator);
+
+  return encodeMarkdownEntry({
+    type: "update",
+    root: newRoot,
+    events: eventRGA,
+    changeset,
+  });
+};
+
+// ---- Resolution (multi-head merge) ----
+
+/**
+ * Resolve the current markdown value for a key, merging concurrent heads.
+ *
+ * If there's only one head (no concurrent writes), returns the entry directly.
+ *
+ * If there are multiple heads, finds their common ancestor in the Pail's
+ * merkle clock, then replays all events from ancestor → heads in causal order.
+ */
+const resolveValue = async (
+  blocks: BlockFetcher,
+  current: ValueView,
+  key: string,
+): Promise<DeserializedMarkdownEntry | undefined> => {
+  const mdEntryBlockCid = await Pail.get(blocks, current.root, key);
+  if (!mdEntryBlockCid) {
+    return undefined;
+  }
+  // Cache event blocks in memory so EventFetcher can find them.
+  blocks = withCache(
+    blocks,
+    new MemoryBlockstore(current.revision.map((r) => r.event)),
+  );
+  const events = new EventFetcher<Operation>(blocks);
+
+  // Fast path: single head, no merge needed.
+  if (current.revision.length === 1) {
+    const block = await blocks.get(mdEntryBlockCid as CID);
+    if (!block)
+      throw new Error(`Could not find block for CID ${mdEntryBlockCid}`);
+    return decodeMarkdownEntry(block);
+  }
+
+  // Multi-head: find common ancestor and replay events in causal order.
+  const ancestor = await CRDT.findCommonAncestor(
+    events,
+    current.revision.map((r) => r.event.cid),
+  );
+  if (!ancestor) {
+    throw new Error(
+      `Could not find common ancestor for revision ${current.revision.map((r) => r.event.cid)}`,
+    );
+  }
+
+  // Start from the ancestor's state for this key (if it existed there).
+  const aevent = await events.get(ancestor);
+  let { root } = aevent.value.data;
+  const rootMDEntryCid = await Pail.get(blocks, root, key);
+  let mdEntry: DeserializedMarkdownEntry | undefined;
+  if (rootMDEntryCid) {
+    const block = await blocks.get(rootMDEntryCid as CID);
+    if (!block)
+      throw new Error(`Could not find block for CID ${rootMDEntryCid}`);
+    mdEntry = await decodeMarkdownEntry(block);
+  }
+
+  // Get all events from ancestor → heads, sorted in deterministic causal order.
+  const sorted = await CRDT.findSortedEvents(
+    events,
+    current.revision.map((r) => r.event.cid),
+    ancestor,
+  );
+
+  // Filter to only events that touch this key.
+  const relevantSorted = sorted.filter((e) => {
+    const op = e.value.data;
+    switch (op.type) {
+      case "put":
+        return op.key === key;
+      case "del":
+        return op.key === key;
+      case "batch":
+        return op.ops.some((o) => o.key === key);
+      default:
+        return false;
+    }
+  });
+
+  // Replay each event, building up the merged tree and event history.
+  for (const { value: event } of relevantSorted) {
+    let data = event.data;
+    // Reduce batch operations to the single op for this key.
+    if (data.type === "batch") {
+      const op = data.ops.find((o) => o.key === key);
+      if (!op) {
+        continue;
+      }
+      data = { ...data, ...op };
+    }
+    if (data.type === "put") {
+      const mdEntryCid = await Pail.get(blocks, data.root, key);
+      if (!mdEntryCid) {
+        throw new Error(
+          `Could not find markdown entry for CID ${data.root} and key ${key}`,
+        );
+      }
+      const entryBlock = await blocks.get(mdEntryCid as CID);
+      if (!entryBlock)
+        throw new Error(`Could not find block for CID ${mdEntryCid}`);
+      const newMDEntry = await decodeMarkdownEntry(entryBlock);
+
+      if (newMDEntry.type === "initial") {
+        if (mdEntry) {
+          // Concurrent initial — merge event histories and RGA trees.
+          mdEntry.events.merge(newMDEntry.events);
+          const comparator = makeComparator(mdEntry.events);
+          mdEntry = {
+            type: "initial",
+            events: mdEntry.events,
+            root: mergeRGATrees(mdEntry.root, newMDEntry.root, comparator),
+          };
+        } else {
+          mdEntry = newMDEntry;
+        }
+      } else {
+        // Update — merge event histories, then apply the changeset.
+        if (!mdEntry) {
+          throw new Error(
+            `Expected existing markdown entry for update event, found none for CID ${mdEntryCid}`,
+          );
+        }
+        mdEntry.events.merge(newMDEntry.events);
+        const comparator = makeComparator(mdEntry.events);
+        mdEntry = {
+          type: "update",
+          events: mdEntry.events,
+          root: applyRGAChangeSet(mdEntry.root, newMDEntry.changeset!, comparator),
+          changeset: newMDEntry.changeset!,
+        };
+      }
+    } else if (data.type === "del") {
+      mdEntry = undefined;
+    }
+  }
+  return mdEntry;
+};
+
+/**
+ * Get the current markdown string for a key, resolving concurrent heads.
+ * Returns undefined if the key doesn't exist.
+ */
+export const get = async (
+  blocks: BlockFetcher,
+  current: ValueView,
+  key: string,
+): Promise<string | undefined> => {
+  const mdEntry = await resolveValue(blocks, current, key);
+  if (!mdEntry) {
+    return undefined;
+  }
+  return toMarkdown(mdEntry.root);
 };

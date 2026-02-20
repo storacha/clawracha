@@ -83,23 +83,20 @@ export async function processChanges(
       path.join(workspace, change.path),
       "utf-8",
     );
-    const newEntry = current
+    const block = current
       ? await mdsync.put(blocks, current, change.path, content)
       : await mdsync.v0Put(content);
-    if (!newEntry) {
+    if (!block) {
       continue; // No change detected, skip writing a new entry.
     }
-    const { mdEntryCid, additions } = newEntry;
-    // Sink blocks to CAR for upload, and store locally for future resolveValue calls.
-    for (const block of additions) {
-      await sink(block);
-      if (store) await store(block);
-    }
+    // Sink single block to CAR for upload, and store locally for future resolveValue calls.
+    await sink(block);
+    if (store) await store(block);
 
     pendingOps.push({
       type: "put",
       key: change.path,
-      value: mdEntryCid as CID,
+      value: block.cid as CID,
     });
   }
 

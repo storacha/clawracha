@@ -15,32 +15,27 @@ class TestBlockstore extends MemoryBlockstore {
 
 const mockName = {} as any;
 
-/** Helper: v0Put markdown, store blocks, create ValueView. */
+/** Helper: v0Put markdown, store block, create ValueView. */
 async function initPail(blocks: TestBlockstore, key: string, md: string) {
-  const { mdEntryCid, additions } = await mdsync.v0Put(md);
-  await blocks.putMany(additions);
-  const rev = await Revision.v0Put(blocks, key, mdEntryCid);
+  const block = await mdsync.v0Put(md);
+  await blocks.put(block);
+  const rev = await Revision.v0Put(blocks, key, block.cid);
   await blocks.putMany(rev.additions);
   await blocks.put(rev.revision.event);
   const { value } = await Value.from(blocks, mockName, rev.revision);
   return value;
 }
 
-/** Helper: put markdown update, store blocks, create new ValueView. */
+/** Helper: put markdown update, store block, create new ValueView. */
 async function updatePail(
   blocks: TestBlockstore,
   current: any,
   key: string,
   md: string,
 ) {
-  const { mdEntryCid, additions } = (await mdsync.put(
-    blocks,
-    current,
-    key,
-    md,
-  ))!;
-  await blocks.putMany(additions);
-  const rev = await Revision.put(blocks, current, key, mdEntryCid);
+  const block = (await mdsync.put(blocks, current, key, md))!;
+  await blocks.put(block);
+  const rev = await Revision.put(blocks, current, key, block.cid);
   await blocks.putMany(rev.additions);
   await blocks.put(rev.revision.event);
   const { value } = await Value.from(blocks, mockName, rev.revision);
@@ -105,25 +100,25 @@ describe("mdsync", () => {
     const v0 = await initPail(blocks, "doc.md", "# Doc\n\nOriginal.\n");
 
     // Two concurrent edits branching from v0
-    const { mdEntryCid: cid1, additions: a1 } = (await mdsync.put(
+    const block1 = (await mdsync.put(
       blocks,
       v0,
       "doc.md",
       "# Doc\n\nOriginal.\n\nFrom replica 1.\n",
     ))!;
-    await blocks.putMany(a1);
-    const rev1 = await Revision.put(blocks, v0, "doc.md", cid1);
+    await blocks.put(block1);
+    const rev1 = await Revision.put(blocks, v0, "doc.md", block1.cid);
     await blocks.putMany(rev1.additions);
     await blocks.put(rev1.revision.event);
 
-    const { mdEntryCid: cid2, additions: a2 } = (await mdsync.put(
+    const block2 = (await mdsync.put(
       blocks,
       v0,
       "doc.md",
       "# Doc\n\nOriginal.\n\nFrom replica 2.\n",
     ))!;
-    await blocks.putMany(a2);
-    const rev2 = await Revision.put(blocks, v0, "doc.md", cid2);
+    await blocks.put(block2);
+    const rev2 = await Revision.put(blocks, v0, "doc.md", block2.cid);
     await blocks.putMany(rev2.additions);
     await blocks.put(rev2.revision.event);
 
@@ -141,7 +136,6 @@ describe("mdsync", () => {
     expect(result).toContain("From replica 1.");
     expect(result).toContain("From replica 2.");
   });
-});
 
   it("resolves concurrent initial puts for a new key from two heads", async () => {
     const blocks = new TestBlockstore();
@@ -150,26 +144,25 @@ describe("mdsync", () => {
     const v0 = await initPail(blocks, "bootstrap.md", "# Bootstrap\n");
 
     // Two concurrent puts for a NEW key "doc.md" that doesn't exist yet
-    // Both branch from v0, so both will create "initial" entries
-    const { mdEntryCid: cid1, additions: a1 } = (await mdsync.put(
+    const block1 = (await mdsync.put(
       blocks,
       v0,
       "doc.md",
       "# Doc\n\nFrom replica 1.\n",
     ))!;
-    await blocks.putMany(a1);
-    const rev1 = await Revision.put(blocks, v0, "doc.md", cid1);
+    await blocks.put(block1);
+    const rev1 = await Revision.put(blocks, v0, "doc.md", block1.cid);
     await blocks.putMany(rev1.additions);
     await blocks.put(rev1.revision.event);
 
-    const { mdEntryCid: cid2, additions: a2 } = (await mdsync.put(
+    const block2 = (await mdsync.put(
       blocks,
       v0,
       "doc.md",
       "# Doc\n\nFrom replica 2.\n",
     ))!;
-    await blocks.putMany(a2);
-    const rev2 = await Revision.put(blocks, v0, "doc.md", cid2);
+    await blocks.put(block2);
+    const rev2 = await Revision.put(blocks, v0, "doc.md", block2.cid);
     await blocks.putMany(rev2.additions);
     await blocks.put(rev2.revision.event);
 
@@ -183,7 +176,7 @@ describe("mdsync", () => {
 
     const result = await mdsync.get(blocks, merged, "doc.md");
     expect(result).toBeDefined();
-    // Both edits should be present in the resolved document
     expect(result).toContain("From replica 1.");
     expect(result).toContain("From replica 2.");
   });
+});
