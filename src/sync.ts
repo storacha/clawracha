@@ -43,6 +43,7 @@ import {
   makeEncryptionConfig,
   makeDecryptionConfig,
   getEncryptedClient,
+  delegatePlanningDelegationToKMS,
 } from "./utils/crypto.js";
 
 /** Engine is either stopped or running with a name and client. */
@@ -110,13 +111,17 @@ export class SyncEngine {
       const { ok: planDel } = await extract(planBytes);
       if (!planDel) throw new Error("Failed to extract plan delegation");
 
+      const planDelForKMS = await delegatePlanningDelegationToKMS(
+        agent,
+        planDel,
+      );
       const uploadBytes = decodeDelegation(config.uploadDelegation!);
       const { ok: uploadDel } = await extract(uploadBytes);
       if (!uploadDel) throw new Error("Failed to extract upload delegation");
       this.encryptionConfig = makeEncryptionConfig(
         agent,
         config.spaceDID as `did:key:${string}`,
-        [planDel, uploadDel],
+        [planDelForKMS, uploadDel],
       );
 
       // For decrypt, uploadDelegation covers space/content/decrypt

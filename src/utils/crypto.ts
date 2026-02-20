@@ -21,9 +21,13 @@ import {
   encryptFile,
   encryptedBlockStream,
 } from "@storacha/encrypt-upload-client/utils/encrypt";
+import { Delegation } from "@ucanto/interface";
+import { delegate } from "@ucanto/core";
+import { EdSigner } from "@storacha/client/principal/ed25519";
 
 const KMS_SERVICE_URL = "https://ucan-kms-production.protocol-labs.workers.dev";
-const KMS_SERVICE_DID = "did:key:z6MksQJobJmBfPhjHWgFXVppqM6Fcjc1k7xu4z6xvusVrtKv";
+const KMS_SERVICE_DID =
+  "did:key:z6MksQJobJmBfPhjHWgFXVppqM6Fcjc1k7xu4z6xvusVrtKv";
 
 let cachedAdapter: CryptoAdapter | null = null;
 
@@ -40,6 +44,21 @@ export async function getEncryptedClient(
   return createEncryptedClient({
     storachaClient,
     cryptoAdapter,
+  });
+}
+
+export async function delegatePlanningDelegationToKMS(
+  agent: EdSigner,
+  planDelegation: Delegation,
+): Promise<Proof> {
+  return await delegate({
+    issuer: agent,
+    audience: { did: () => KMS_SERVICE_DID } as any,
+    capabilities: [
+      { can: "plan/get", with: planDelegation.capabilities[0].with },
+    ] as any,
+    proofs: [planDelegation],
+    expiration: Infinity,
   });
 }
 
