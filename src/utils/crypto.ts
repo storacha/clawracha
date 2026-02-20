@@ -6,7 +6,7 @@
 import type { Block } from "multiformats";
 import type { CID } from "multiformats/cid";
 import type { Client } from "@storacha/client";
-import type { Proof } from "@ucanto/interface";
+import type { Proof, Signer } from "@ucanto/interface";
 type SpaceDID = `did:key:${string}`;
 import type {
   CryptoAdapter,
@@ -23,7 +23,7 @@ import {
 } from "@storacha/encrypt-upload-client/utils/encrypt";
 import { Delegation } from "@ucanto/interface";
 import { delegate } from "@ucanto/core";
-import { EdSigner } from "@storacha/client/principal/ed25519";
+import { decrypt } from "@storacha/capabilities/space";
 
 const KMS_SERVICE_URL = "https://ucan-kms-production.protocol-labs.workers.dev";
 const KMS_SERVICE_DID =
@@ -48,7 +48,7 @@ export async function getEncryptedClient(
 }
 
 export async function delegatePlanningDelegationToKMS(
-  agent: EdSigner,
+  agent: Signer,
   planDelegation: Delegation,
 ): Promise<Proof> {
   return await delegate({
@@ -127,12 +127,23 @@ async function drainStream(stream: ReadableStream): Promise<Uint8Array> {
 export function makeDecryptFn(
   encryptedClient: EncryptedClient,
   decryptionConfig: DecryptionConfig,
+  agent: Signer,
 ): (cid: CID) => Promise<Uint8Array> {
   return async (cid: CID): Promise<Uint8Array> => {
-    const { stream } = await encryptedClient.retrieveAndDecryptFile(
-      cid,
-      decryptionConfig,
-    );
+    const decryptDelegation = await decrypt.delegate({
+      issuer: agent,
+      audience: agent,
+      with: decryptionConfig.spaceDID,
+      nb: {
+        resource: cid,
+      },
+      expiration: Math.floor(Date.now() / 1000) + 60 * 15, // 15 minutes
+      proofs: [decryptionConfig.decryptDelegation],
+    });
+    const { stream } = await encryptedClient.retrieveAndDecryptFile(cid, {
+      ...decryptionConfig,
+      decryptDelegation,
+    });
     return drainStream(stream);
   };
 }

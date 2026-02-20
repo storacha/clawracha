@@ -128,6 +128,7 @@ export class SyncEngine {
       this.decryptionConfig = makeDecryptionConfig(
         config.spaceDID as `did:key:${string}`,
         uploadDel,
+        [planDelForKMS, uploadDel],
       );
       this.encryptedClient = await getEncryptedClient(storachaClient);
     }
@@ -348,6 +349,7 @@ export class SyncEngine {
         current: this.current ?? undefined,
         encryptedClient: this.encryptedClient,
         decryptionConfig: this.decryptionConfig,
+        agent: name.agent,
       });
     }
 

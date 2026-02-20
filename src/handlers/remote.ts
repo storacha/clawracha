@@ -11,10 +11,13 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { CID } from "multiformats/cid";
 import type { BlockFetcher, ValueView } from "@storacha/ucn/pail/api";
-import type { DecryptionConfig, EncryptedClient } from "@storacha/encrypt-upload-client/types";
+import type {
+  DecryptionConfig,
+  EncryptedClient,
+} from "@storacha/encrypt-upload-client/types";
 import * as mdsync from "../mdsync/index.js";
 import { makeDecryptFn } from "../utils/crypto.js";
-
+import type { Signer } from "@ucanto/interface";
 const DEFAULT_GATEWAY = "https://storacha.link";
 
 const isMarkdown = (filePath: string) => filePath.endsWith(".md");
@@ -48,6 +51,7 @@ export async function applyRemoteChanges(
     current?: ValueView;
     encryptedClient?: EncryptedClient;
     decryptionConfig?: DecryptionConfig;
+    agent?: Signer;
   },
 ): Promise<void> {
   const gateway = options?.gateway ?? DEFAULT_GATEWAY;
@@ -64,14 +68,27 @@ export async function applyRemoteChanges(
       } catch (err: any) {
         if (err.code !== "ENOENT") throw err;
       }
-    } else if (isMarkdown(relativePath) && options?.blocks && options?.current) {
+    } else if (
+      isMarkdown(relativePath) &&
+      options?.blocks &&
+      options?.current
+    ) {
       // Markdown: resolve via mdsync CRDT merge.
       // For single-device, unencrypted blocks are stored locally.
       // TODO: For multi-device private spaces, add decrypt layer to resolveValue.
       const decrypt = isEncrypted
-        ? makeDecryptFn(options!.encryptedClient!, options!.decryptionConfig!)
+        ? makeDecryptFn(
+            options!.encryptedClient!,
+            options!.decryptionConfig!,
+            options!.agent!,
+          )
         : undefined;
-      const content = await mdsync.get(options.blocks, options.current, relativePath, decrypt);
+      const content = await mdsync.get(
+        options.blocks,
+        options.current,
+        relativePath,
+        decrypt,
+      );
       if (content != null) {
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, content);
