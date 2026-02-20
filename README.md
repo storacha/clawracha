@@ -131,7 +131,7 @@ When the plugin is running, agents get two MCP tools:
 5. All blocks are packed into a CAR file and uploaded to Storacha
 6. Remote changes from other devices are pulled, diffed, and applied locally
 
-See [docs/architecture.md](docs/architecture.md) for the full technical deep-dive.
+See [docs/architecture.md](docs/architecture.md) for the full technical deep-dive and [docs/reference.md](docs/reference.md) for hidden features, edge cases, and troubleshooting.
 
 ## Configuration
 
@@ -169,6 +169,11 @@ Private spaces use `@storacha/encrypt-upload-client` with Google KMS for key man
 - Node.js ≥ 20
 - OpenClaw ≥ 2026.0.0
 - A [Storacha account](https://console.storacha.network) with an active payment plan
+
+## Docs
+
+- **[Architecture Guide](docs/architecture.md)** — How it works under the hood (sync lifecycle, CRDT merge, blockstore tiers, encryption, delegation model)
+- **[Reference](docs/reference.md)** — `.clawrachaignore`, `inspect` command, delegation encoding, troubleshooting
 
 ## License
 
