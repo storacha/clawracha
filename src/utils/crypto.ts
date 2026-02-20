@@ -22,8 +22,8 @@ import {
   encryptedBlockStream,
 } from "@storacha/encrypt-upload-client/utils/encrypt";
 
-const KMS_SERVICE_URL = "https://kms.storacha.network";
-const KMS_SERVICE_DID = "did:web:kms.storacha.network";
+const KMS_SERVICE_URL = "https://ucan-kms-production.protocol-labs.workers.dev";
+const KMS_SERVICE_DID = "did:key:z6MksQJobJmBfPhjHWgFXVppqM6Fcjc1k7xu4z6xvusVrtKv";
 
 let cachedAdapter: CryptoAdapter | null = null;
 
