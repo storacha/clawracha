@@ -57,6 +57,7 @@ export async function processChanges(
   sink: BlockSink,
   store?: BlockStore,
   encryptionConfig?: EncryptionConfig,
+  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
@@ -119,7 +120,7 @@ export async function processChanges(
       "utf-8",
     );
     const block = current
-      ? await mdsync.put(blocks, current, change.path, content)
+      ? await mdsync.put(blocks, current, change.path, content, decrypt)
       : await mdsync.v0Put(content);
     if (!block) {
       continue; // No change detected, skip writing a new entry.

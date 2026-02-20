@@ -172,6 +172,7 @@ export class SyncEngine {
    * Can be called even when not running (accumulates pending ops).
    */
   async processChanges(changes: FileChange[]): Promise<void> {
+    const { name } = this.requireInitialized();
     if (!this.carFile) {
       this.carFile = await makeTempCar();
     }
@@ -183,6 +184,9 @@ export class SyncEngine {
       (block) => this.carFile!.put(block),
       (block) => this.blocks.put(block),
       this.encryptionConfig,
+      this.decryptionConfig && this.encryptedClient
+        ? makeDecryptFn(this.encryptedClient, this.decryptionConfig, name.agent)
+        : undefined,
     );
     this.pendingOps.push(...pendingOps);
   }

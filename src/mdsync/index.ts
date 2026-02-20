@@ -105,13 +105,11 @@ interface DeserializedMarkdownEntryBase {
   events: EventRGA;
 }
 
-interface DeserializedMarkdownEntryInitial
-  extends DeserializedMarkdownEntryBase {
+interface DeserializedMarkdownEntryInitial extends DeserializedMarkdownEntryBase {
   type: "initial";
 }
 
-interface DeserializedMarkdownEntryUpdate
-  extends DeserializedMarkdownEntryBase {
+interface DeserializedMarkdownEntryUpdate extends DeserializedMarkdownEntryBase {
   type: "update";
   /** The changeset that was applied to produce this version of the tree. */
   changeset: RGAChangeSet<MarkdownEvent>;
@@ -174,9 +172,9 @@ export const encodeMarkdownEntry = async (
 /**
  * Decode a single DAG-CBOR block back to a DeserializedMarkdownEntry.
  */
-export const decodeMarkdownEntry = async (
-  block: { bytes: Uint8Array },
-): Promise<DeserializedMarkdownEntry> => {
+export const decodeMarkdownEntry = async (block: {
+  bytes: Uint8Array;
+}): Promise<DeserializedMarkdownEntry> => {
   const decoded = await decode({
     bytes: block.bytes,
     codec: cbor,
@@ -220,9 +218,7 @@ const firstPut = (
   parents: Array<EventLink>,
 ): DeserializedMarkdownEntry => {
   const markdownEvent = new MarkdownEvent(parents);
-  const eventRGA = new RGA<MarkdownEvent, MarkdownEvent>(
-    nohierarchyComparator,
-  );
+  const eventRGA = new RGA<MarkdownEvent, MarkdownEvent>(nohierarchyComparator);
   eventRGA.insert(undefined, markdownEvent, markdownEvent);
   // Only one event, so comparator is trivial (all nodes have the same event).
   const rgaRoot = fromMarkdown(newMarkdown, markdownEvent, (a, b) => 0);
@@ -261,8 +257,9 @@ export const put = async (
   current: ValueView,
   key: string,
   newMarkdown: string,
+  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<Block | null> => {
-  const mdEntry = await resolveValue(blocks, current, key);
+  const mdEntry = await resolveValue(blocks, current, key, decrypt);
   if (!mdEntry) {
     // Key doesn't exist yet — bootstrap with firstPut.
     const entry = firstPut(
@@ -333,7 +330,9 @@ const resolveValue = async (
 
   // Fast path: single head, no merge needed.
   if (current.revision.length === 1) {
-    return decodeMarkdownEntry({ bytes: await getEntryBytes(mdEntryBlockCid as CID) });
+    return decodeMarkdownEntry({
+      bytes: await getEntryBytes(mdEntryBlockCid as CID),
+    });
   }
 
   // Multi-head: find common ancestor and replay events in causal order.
@@ -353,7 +352,9 @@ const resolveValue = async (
   const rootMDEntryCid = await Pail.get(blocks, root, key);
   let mdEntry: DeserializedMarkdownEntry | undefined;
   if (rootMDEntryCid) {
-    mdEntry = await decodeMarkdownEntry({ bytes: await getEntryBytes(rootMDEntryCid as CID) });
+    mdEntry = await decodeMarkdownEntry({
+      bytes: await getEntryBytes(rootMDEntryCid as CID),
+    });
   }
 
   // Get all events from ancestor → heads, sorted in deterministic causal order.
@@ -396,7 +397,9 @@ const resolveValue = async (
           `Could not find markdown entry for CID ${data.root} and key ${key}`,
         );
       }
-      const newMDEntry = await decodeMarkdownEntry({ bytes: await getEntryBytes(mdEntryCid as CID) });
+      const newMDEntry = await decodeMarkdownEntry({
+        bytes: await getEntryBytes(mdEntryCid as CID),
+      });
 
       if (newMDEntry.type === "initial") {
         if (mdEntry) {
@@ -423,7 +426,11 @@ const resolveValue = async (
         mdEntry = {
           type: "update",
           events: mdEntry.events,
-          root: applyRGAChangeSet(mdEntry.root, newMDEntry.changeset!, comparator),
+          root: applyRGAChangeSet(
+            mdEntry.root,
+            newMDEntry.changeset!,
+            comparator,
+          ),
           changeset: newMDEntry.changeset!,
         };
       }
