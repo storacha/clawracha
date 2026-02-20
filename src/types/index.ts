@@ -13,6 +13,20 @@ export interface SyncPluginConfig {
   ignorePatterns: string[];
 }
 
+export interface PublicAccess {
+  type: "public";
+}
+
+export interface PrivateAccess {
+  type: "private";
+  encryption: {
+    provider: string;
+    algorithm: string;
+  };
+}
+
+export type SpaceAccess = PublicAccess | PrivateAccess;
+
 /** Stored in .storacha/config.json — device-specific, not synced */
 export interface DeviceConfig {
   /** Ed25519 agent private key (base64) */
@@ -25,6 +39,8 @@ export interface DeviceConfig {
   nameDelegation?: string;
   /** Space DID extracted from upload delegation */
   spaceDID?: string;
+  /** Space access type — determines if content is encrypted */
+  access?: SpaceAccess;
   /** Whether setup is complete (watcher won't start without this) */
   setupComplete?: boolean;
 }

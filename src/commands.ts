@@ -296,6 +296,7 @@ export async function doSetupWithLogin(
 
   deviceConfig.uploadDelegation = encodeDelegation(archiveBytes);
   deviceConfig.spaceDID = space.did();
+  deviceConfig.access = access;
   deviceConfig.setupComplete = true;
   await saveDeviceConfig(workspace, deviceConfig);
 
