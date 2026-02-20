@@ -245,7 +245,13 @@ export class SyncEngine {
     const afterEntries = await this.getPailEntries();
     const remoteChanges = diffRemoteChanges(beforeEntries, afterEntries);
     if (remoteChanges.length > 0) {
-      await this.applyRemoteChanges(remoteChanges, afterEntries);
+      await applyRemoteChanges(remoteChanges, afterEntries, this.workspace, {
+        blocks: this.blocks,
+        current: this.current ?? undefined,
+        encryptedClient: this.encryptedClient,
+        decryptionConfig: this.decryptionConfig,
+        agent: name.agent,
+      });
     }
 
     this.lastSync = Date.now();
@@ -284,21 +290,6 @@ export class SyncEngine {
       if (cid) entries.set(key, cid);
     }
     return entries;
-  }
-
-  /**
-   * Apply remote changes to local filesystem.
-   */
-  private async applyRemoteChanges(
-    changedPaths: string[],
-    entries: PailEntries,
-  ): Promise<void> {
-    await applyRemoteChanges(changedPaths, entries, this.workspace, {
-      blocks: this.blocks,
-      current: this.current ?? undefined,
-      encryptedClient: this.encryptedClient,
-      decryptionConfig: this.decryptionConfig,
-    });
   }
 
   /**
