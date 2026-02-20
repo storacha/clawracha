@@ -13,6 +13,7 @@ export interface DelegationBundle {
   upload: Uint8Array;
   name: Uint8Array;
   plan: Uint8Array;
+  access?: { type: string; encryption?: { provider: string; algorithm: string } };
 }
 
 /**
@@ -78,5 +79,6 @@ export async function extractDelegationBundle(
     upload: value.upload as Uint8Array,
     name: value.name as Uint8Array,
     plan: value.plan as Uint8Array,
+    access: value.access as DelegationBundle["access"],
   };
 }

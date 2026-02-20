@@ -8,7 +8,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
-import type { DeviceConfig, SyncPluginConfig } from "./types/index.js";
+import type { DeviceConfig, SpaceAccess, SyncPluginConfig } from "./types/index.js";
 import { SyncEngine } from "./sync.js";
 import { FileWatcher } from "./watcher.js";
 import {
@@ -373,6 +373,9 @@ export async function doJoin(
   deviceConfig.nameDelegation = encodeDelegation(bundle.name);
   deviceConfig.planDelegation = encodeDelegation(bundle.plan);
   deviceConfig.spaceDID = spaceDID ?? undefined;
+  if (bundle.access) {
+    deviceConfig.access = bundle.access as SpaceAccess;
+  }
   deviceConfig.setupComplete = true;
   await saveDeviceConfig(workspace, deviceConfig);
 
@@ -461,5 +464,6 @@ export async function doGrant(
     upload: uploadArchive,
     name: nameArchive,
     plan: planArchive,
+    access: deviceConfig.access,
   });
 }
