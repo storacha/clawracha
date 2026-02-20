@@ -34,8 +34,16 @@ import { Client } from "@storacha/client";
 import { createStorachaClient } from "./utils/client.js";
 import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
 import { extract } from "@storacha/client/delegation";
-import type { EncryptionConfig, DecryptionConfig, EncryptedClient } from "@storacha/encrypt-upload-client/types";
-import { makeEncryptionConfig, makeDecryptionConfig, getEncryptedClient } from "./utils/crypto.js";
+import type {
+  EncryptionConfig,
+  DecryptionConfig,
+  EncryptedClient,
+} from "@storacha/encrypt-upload-client/types";
+import {
+  makeEncryptionConfig,
+  makeDecryptionConfig,
+  getEncryptedClient,
+} from "./utils/crypto.js";
 
 /** Engine is either stopped or running with a name and client. */
 type State =
@@ -94,22 +102,24 @@ export class SyncEngine {
     // Set up encryption for private spaces
     if (config.access?.type === "private") {
       if (!config.planDelegation) {
-        throw new Error("Private space requires a plan delegation for KMS access");
+        throw new Error(
+          "Private space requires a plan delegation for KMS access",
+        );
       }
       const planBytes = decodeDelegation(config.planDelegation);
       const { ok: planDel } = await extract(planBytes);
       if (!planDel) throw new Error("Failed to extract plan delegation");
 
-      this.encryptionConfig = makeEncryptionConfig(
-        agent,
-        config.spaceDID as `did:key:${string}`,
-        [planDel],
-      );
-
-      // For decrypt, uploadDelegation covers space/content/decrypt
       const uploadBytes = decodeDelegation(config.uploadDelegation!);
       const { ok: uploadDel } = await extract(uploadBytes);
       if (!uploadDel) throw new Error("Failed to extract upload delegation");
+      this.encryptionConfig = makeEncryptionConfig(
+        agent,
+        config.spaceDID as `did:key:${string}`,
+        [planDel, uploadDel],
+      );
+
+      // For decrypt, uploadDelegation covers space/content/decrypt
       this.decryptionConfig = makeDecryptionConfig(
         config.spaceDID as `did:key:${string}`,
         uploadDel,
