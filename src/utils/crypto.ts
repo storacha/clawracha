@@ -17,7 +17,10 @@ import type {
 } from "@storacha/encrypt-upload-client/types";
 import { createGenericKMSAdapter } from "@storacha/encrypt-upload-client/factories.node";
 import { create as createEncryptedClient } from "@storacha/encrypt-upload-client";
-import { encryptFile, encryptedBlockStream } from "@storacha/encrypt-upload-client/utils/encrypt";
+import {
+  encryptFile,
+  encryptedBlockStream,
+} from "@storacha/encrypt-upload-client/utils/encrypt";
 
 const KMS_SERVICE_URL = "https://kms.storacha.network";
 const KMS_SERVICE_DID = "did:web:kms.storacha.network";
@@ -76,22 +79,6 @@ export async function encryptToBlockStream(
   const payload = await encryptFile(adapter, file, encryptionConfig);
   return encryptedBlockStream(payload, adapter) as any;
 }
-
-/**
- * Wrap raw bytes as a BlobLike for encryption.
- */
-export function bytesToBlobLike(bytes: Uint8Array): BlobLike {
-  return {
-    stream: () =>
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(bytes as Uint8Array<ArrayBuffer>);
-          controller.close();
-        },
-      }),
-  } as BlobLike;
-}
-
 
 /**
  * Drain a ReadableStream into a single Uint8Array.
