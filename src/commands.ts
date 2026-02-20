@@ -251,7 +251,7 @@ export async function doSetup(
   const audience = { did: () => agent.did() } as any;
   const uploadDelegation = await tempClient.createDelegation(
     audience,
-    Object.keys(spaceAccess) as any,
+    Object.keys(spaceAccess).concat(["space/content/decrypt"]) as any,
     { expiration: Infinity },
   );
 
@@ -260,10 +260,12 @@ export async function doSetup(
 
   // Delegate plan/get from account → clawracha agent
   const accountDID = account.did();
-  const planProofs = tempClient.agent.proofs([{
-    can: "plan/get",
-    with: accountDID,
-  }] as any);
+  const planProofs = tempClient.agent.proofs([
+    {
+      can: "plan/get",
+      with: accountDID,
+    },
+  ] as any);
   const planDelegation = await delegate({
     issuer: tempClient.agent.issuer,
     audience: { did: () => agent.did() } as any,
@@ -406,7 +408,7 @@ export async function doGrant(
   const audience = { did: () => targetDID } as any;
   const uploadDel = await storachaClient.createDelegation(
     audience,
-    Object.keys(spaceAccess) as any,
+    Object.keys(spaceAccess).concat(["space/content/decrypt"]) as any,
     { expiration: Infinity },
   );
   const { ok: uploadArchive } = await uploadDel.archive();
@@ -434,8 +436,7 @@ export async function doGrant(
   }
   const planBytes = decodeDelegation(deviceConfig.planDelegation);
   const { ok: existingPlanDel } = await extract(planBytes);
-  if (!existingPlanDel)
-    throw new Error("Failed to extract plan delegation");
+  if (!existingPlanDel) throw new Error("Failed to extract plan delegation");
   const planDel = await delegate({
     issuer: agent,
     audience,
