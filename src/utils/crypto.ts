@@ -4,6 +4,7 @@
  */
 
 import type { Block } from "multiformats";
+import type { CID } from "multiformats/cid";
 import type { Client } from "@storacha/client";
 import type { Proof } from "@ucanto/interface";
 type SpaceDID = `did:key:${string}`;
@@ -89,4 +90,43 @@ export function bytesToBlobLike(bytes: Uint8Array): BlobLike {
         },
       }),
   } as BlobLike;
+}
+
+
+/**
+ * Drain a ReadableStream into a single Uint8Array.
+ */
+async function drainStream(stream: ReadableStream): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+/**
+ * Create a decrypt function for mdsync resolveValue.
+ * Fetches encrypted content by CID via EncryptedClient and returns decrypted bytes.
+ */
+export function makeDecryptFn(
+  encryptedClient: EncryptedClient,
+  decryptionConfig: DecryptionConfig,
+): (cid: CID) => Promise<Uint8Array> {
+  return async (cid: CID): Promise<Uint8Array> => {
+    const { stream } = await encryptedClient.retrieveAndDecryptFile(
+      cid,
+      decryptionConfig,
+    );
+    return drainStream(stream);
+  };
 }

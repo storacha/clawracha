@@ -13,6 +13,7 @@ import type { CID } from "multiformats/cid";
 import type { BlockFetcher, ValueView } from "@storacha/ucn/pail/api";
 import type { DecryptionConfig, EncryptedClient } from "@storacha/encrypt-upload-client/types";
 import * as mdsync from "../mdsync/index.js";
+import { makeDecryptFn } from "../utils/crypto.js";
 
 const DEFAULT_GATEWAY = "https://storacha.link";
 
@@ -67,7 +68,10 @@ export async function applyRemoteChanges(
       // Markdown: resolve via mdsync CRDT merge.
       // For single-device, unencrypted blocks are stored locally.
       // TODO: For multi-device private spaces, add decrypt layer to resolveValue.
-      const content = await mdsync.get(options.blocks, options.current, relativePath);
+      const decrypt = isEncrypted
+        ? makeDecryptFn(options!.encryptedClient!, options!.decryptionConfig!)
+        : undefined;
+      const content = await mdsync.get(options.blocks, options.current, relativePath, decrypt);
       if (content != null) {
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, content);
