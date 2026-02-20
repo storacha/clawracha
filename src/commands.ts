@@ -274,7 +274,6 @@ export async function doSetupWithLogin(
   const audience = { did: () => agent.did() } as any;
   const delegation = await tempClient.createDelegation(
     audience,
-    // @ts-expect-error createDelegation should validate abilities
     Object.keys(spaceAccess),
     { expiration: Infinity },
   );

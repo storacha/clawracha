@@ -417,7 +417,6 @@ export default function plugin(api: OpenClawPluginApi) {
               } as any;
               const uploadDel = await storachaClient.createDelegation(
                 audience,
-                // @ts-expect-error createDelegation should validate abilities
                 Object.keys(spaceAccess),
                 { expiration: Infinity },
               );

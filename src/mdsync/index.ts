@@ -38,6 +38,13 @@ import {
   decodeChangeSet,
   toMarkdown,
   mergeRGATrees,
+  serializeTree,
+  deserializeTree,
+  serializeRGA,
+  deserializeRGA,
+  serializeChangeSet,
+  deserializeChangeSet as deserializeChangeSetStruct,
+  stripUndefined,
 } from "@storacha/md-merge";
 import * as Pail from "@web3-storage/pail";
 import { decode, encode } from "multiformats/block";
@@ -563,4 +570,67 @@ export const get = async (
     return undefined;
   }
   return toMarkdown(mdEntry.root);
+};
+
+
+// ---- Single-block entry encoding ----
+
+/**
+ * Encode a DeserializedMarkdownEntry as a single DAG-CBOR block.
+ * All data (tree, events, changeset) is inlined — no CID references.
+ */
+export const encodeMarkdownEntry = async (
+  entry: DeserializedMarkdownEntry,
+): Promise<Block> => {
+  const flat: Record<string, unknown> = {
+    type: entry.type,
+    root: serializeTree(entry.root),
+    events: serializeRGA(entry.events, serializeMarkdownEvent),
+  };
+  if (entry.type === "update") {
+    flat.changeset = serializeChangeSet(entry.changeset);
+  }
+  return await encode({
+    value: stripUndefined(flat),
+    codec: cbor,
+    hasher: sha256,
+  });
+};
+
+/**
+ * Decode a single DAG-CBOR block back to a DeserializedMarkdownEntry.
+ */
+export const decodeMarkdownEntry = async (
+  block: { bytes: Uint8Array },
+): Promise<DeserializedMarkdownEntry> => {
+  const decoded = await decode({
+    bytes: block.bytes,
+    codec: cbor,
+    hasher: sha256,
+  });
+  const flat = decoded.value as {
+    type: string;
+    root: any;
+    events: any;
+    changeset?: any;
+  };
+
+  const eventRGA = deserializeRGA(
+    flat.events,
+    parseMarkdownEvent,
+    deserializeMarkdownEvent,
+    nohierarchyComparator,
+  );
+  const comparator = makeComparator(eventRGA);
+  const root = deserializeTree(flat.root, parseMarkdownEvent, comparator);
+
+  if (flat.type === "initial") {
+    return { type: "initial", root, events: eventRGA };
+  }
+
+  const changeset = deserializeChangeSetStruct(
+    flat.changeset,
+    parseMarkdownEvent,
+  );
+  return { type: "update", root, events: eventRGA, changeset };
 };
