@@ -13,9 +13,17 @@ import { SyncEngine } from "./sync.js";
 import { FileWatcher } from "./watcher.js";
 import {
   encodeDelegation,
+  decodeDelegation,
   readDelegationArg,
 } from "./utils/delegation.js";
-import { Agent } from "@storacha/ucn/pail";
+import { createStorachaClient } from "./utils/client.js";
+import {
+  createDelegationBundle,
+  extractDelegationBundle,
+} from "./utils/bundle.js";
+import { Agent, Name } from "@storacha/ucn/pail";
+import { extract } from "@storacha/client/delegation";
+import { delegate } from "@ucanto/core";
 
 // --- Per-workspace sync state (returned by startWorkspaceSync) ---
 
@@ -188,56 +196,6 @@ export async function doInit(workspace: string): Promise<InitResult> {
 export async function doSetup(
   workspace: string,
   agentId: string,
-  delegationArg: string,
-  pluginConfig: Partial<SyncPluginConfig>,
-  gatewayConfig?: NonNullable<OpenClawConfig["gateway"]>,
-): Promise<SetupResult> {
-  const deviceConfig = await loadDeviceConfig(workspace);
-  if (!deviceConfig?.agentKey) {
-    throw new Error("Not initialized. Run init first.");
-  }
-  if (deviceConfig.setupComplete) {
-    const agent = Agent.parse(deviceConfig.agentKey);
-    return { agentDID: agent.did(), spaceDID: deviceConfig.spaceDID };
-  }
-
-  const delegation = await readDelegationArg(delegationArg);
-  const spaceDID = delegation.capabilities[0]?.with;
-
-  const { ok: archiveBytes } = await delegation.archive();
-  if (!archiveBytes) throw new Error("Failed to archive delegation");
-
-  deviceConfig.uploadDelegation = encodeDelegation(archiveBytes);
-  deviceConfig.spaceDID = spaceDID ?? undefined;
-  deviceConfig.setupComplete = true;
-  await saveDeviceConfig(workspace, deviceConfig);
-
-  // One-shot sync: scan existing files, upload, stop
-  const sync = await startWorkspaceSync(
-    workspace,
-    agentId,
-    pluginConfig,
-    true,
-    console,
-  );
-  if (!sync) throw new Error("Failed to start sync engine");
-
-  await sync.watcher.waitForReady();
-  await sync.watcher.stop();
-  await sync.watcher.forceFlush();
-  await sync.engine.stop();
-
-  if (gatewayConfig) {
-    await requestWorkspaceUpdate(workspace, agentId, gatewayConfig);
-  }
-
-  const agent = Agent.parse(deviceConfig.agentKey);
-  return { agentDID: agent.did(), spaceDID: spaceDID ?? undefined };
-}
-
-export async function doSetupWithLogin(
-  workspace: string,
-  agentId: string,
   email: string,
   spaceName: string,
   pluginConfig: Partial<SyncPluginConfig>,
@@ -275,26 +233,49 @@ export async function doSetupWithLogin(
 
   const access =
     accessChoice === "Private (encrypted)"
-      ? { type: "private" as const, encryption: { provider: "google-kms" as const, algorithm: "RSA_DECRYPT_OAEP_3072_SHA256" as const } }
+      ? {
+          type: "private" as const,
+          encryption: {
+            provider: "google-kms" as const,
+            algorithm: "RSA_DECRYPT_OAEP_3072_SHA256" as const,
+          },
+        }
       : { type: "public" as const };
 
   console.log(`Creating space "${spaceName}"...`);
   const space = await tempClient.createSpace(spaceName, { account, access });
   await tempClient.setCurrentSpace(space.did());
 
-  // Delegate upload access from the new space to our clawracha agent
+  // Delegate space access from the new space to our clawracha agent
   const agent = Agent.parse(deviceConfig.agentKey);
   const audience = { did: () => agent.did() } as any;
-  const delegation = await tempClient.createDelegation(
+  const uploadDelegation = await tempClient.createDelegation(
     audience,
-    Object.keys(spaceAccess),
+    Object.keys(spaceAccess) as any,
     { expiration: Infinity },
   );
 
-  const { ok: archiveBytes } = await delegation.archive();
-  if (!archiveBytes) throw new Error("Failed to archive delegation");
+  const { ok: uploadArchive } = await uploadDelegation.archive();
+  if (!uploadArchive) throw new Error("Failed to archive upload delegation");
 
-  deviceConfig.uploadDelegation = encodeDelegation(archiveBytes);
+  // Delegate plan/get from account → clawracha agent
+  const accountDID = account.did();
+  const planProofs = tempClient.agent.proofs([{
+    can: "plan/get",
+    with: accountDID,
+  }] as any);
+  const planDelegation = await delegate({
+    issuer: tempClient.agent.issuer,
+    audience: { did: () => agent.did() } as any,
+    capabilities: [{ can: "plan/get", with: accountDID }] as any,
+    proofs: planProofs,
+    expiration: Infinity,
+  });
+  const { ok: planArchive } = await planDelegation.archive();
+  if (!planArchive) throw new Error("Failed to archive plan delegation");
+
+  deviceConfig.uploadDelegation = encodeDelegation(uploadArchive);
+  deviceConfig.planDelegation = encodeDelegation(planArchive);
   deviceConfig.spaceDID = space.did();
   deviceConfig.access = access;
   deviceConfig.setupComplete = true;
@@ -302,7 +283,11 @@ export async function doSetupWithLogin(
 
   // One-shot sync: scan existing files, upload, stop
   const sync = await startWorkspaceSync(
-    workspace, agentId, pluginConfig, true, console,
+    workspace,
+    agentId,
+    pluginConfig,
+    true,
+    console,
   );
   if (!sync) throw new Error("Failed to start sync engine");
   await sync.watcher.waitForReady();
@@ -317,11 +302,28 @@ export async function doSetupWithLogin(
   return { agentDID: agent.did(), spaceDID: space.did() };
 }
 
+// --- Bundle arg helper ---
+
+/**
+ * Read a delegation bundle from a file path or base64-encoded string.
+ * Returns raw CAR bytes.
+ */
+async function readBundleArg(arg: string): Promise<Uint8Array> {
+  // Try as file path first
+  try {
+    const bytes = await fs.readFile(arg);
+    return new Uint8Array(bytes);
+  } catch (err: any) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  // Try as base64
+  return Uint8Array.from(Buffer.from(arg, "base64"));
+}
+
 export async function doJoin(
   workspace: string,
   agentId: string,
-  uploadDelegationArg: string,
-  nameDelegationArg: string,
+  bundleArg: string,
   pluginConfig: Partial<SyncPluginConfig>,
   gatewayConfig?: NonNullable<OpenClawConfig["gateway"]>,
 ): Promise<JoinResult> {
@@ -331,20 +333,33 @@ export async function doJoin(
   }
   if (deviceConfig.setupComplete) {
     const agent = Agent.parse(deviceConfig.agentKey);
-    return { agentDID: agent.did(), spaceDID: deviceConfig.spaceDID, pullCount: 0 };
+    return {
+      agentDID: agent.did(),
+      spaceDID: deviceConfig.spaceDID,
+      pullCount: 0,
+    };
   }
 
-  const uploadDelegation = await readDelegationArg(uploadDelegationArg);
-  const nameDelegation = await readDelegationArg(nameDelegationArg);
+  const bundleBytes = await readBundleArg(bundleArg);
+  const bundle = await extractDelegationBundle(bundleBytes);
+
+  const { ok: uploadDelegation, error: uploadErr } = await extract(
+    bundle.upload,
+  );
+  if (!uploadDelegation)
+    throw new Error(`Failed to extract upload delegation: ${uploadErr}`);
+  const { ok: nameDelegation, error: nameErr } = await extract(bundle.name);
+  if (!nameDelegation)
+    throw new Error(`Failed to extract name delegation: ${nameErr}`);
+  const { ok: planDelegation, error: planErr } = await extract(bundle.plan);
+  if (!planDelegation)
+    throw new Error(`Failed to extract plan delegation: ${planErr}`);
+
   const spaceDID = uploadDelegation.capabilities[0]?.with;
 
-  const { ok: uploadArchive } = await uploadDelegation.archive();
-  if (!uploadArchive) throw new Error("Failed to archive upload delegation");
-  const { ok: nameArchiveBytes } = await nameDelegation.archive();
-  if (!nameArchiveBytes) throw new Error("Failed to archive name delegation");
-
-  deviceConfig.uploadDelegation = encodeDelegation(uploadArchive);
-  deviceConfig.nameDelegation = encodeDelegation(nameArchiveBytes);
+  deviceConfig.uploadDelegation = encodeDelegation(bundle.upload);
+  deviceConfig.nameDelegation = encodeDelegation(bundle.name);
+  deviceConfig.planDelegation = encodeDelegation(bundle.plan);
   deviceConfig.spaceDID = spaceDID ?? undefined;
   deviceConfig.setupComplete = true;
   await saveDeviceConfig(workspace, deviceConfig);
@@ -369,5 +384,71 @@ export async function doJoin(
   }
 
   const agent = Agent.parse(deviceConfig.agentKey);
-  return { agentDID: agent.did(), spaceDID: spaceDID ?? undefined, pullCount };
+  return {
+    agentDID: agent.did(),
+    spaceDID: spaceDID ?? undefined,
+    pullCount,
+  };
+}
+
+export async function doGrant(
+  workspace: string,
+  targetDID: `did:${string}:${string}`,
+): Promise<Uint8Array> {
+  const deviceConfig = await loadDeviceConfig(workspace);
+  if (!deviceConfig?.setupComplete) {
+    throw new Error("Workspace not set up. Run setup first.");
+  }
+
+  // Upload delegation: re-delegate space access
+  const storachaClient = await createStorachaClient(deviceConfig);
+  const { spaceAccess } = await import("@storacha/client/capability/access");
+  const audience = { did: () => targetDID } as any;
+  const uploadDel = await storachaClient.createDelegation(
+    audience,
+    Object.keys(spaceAccess) as any,
+    { expiration: Infinity },
+  );
+  const { ok: uploadArchive } = await uploadDel.archive();
+  if (!uploadArchive) throw new Error("Failed to archive upload delegation");
+
+  // Name delegation: re-delegate via name.grant()
+  const agent = Agent.parse(deviceConfig.agentKey);
+  let name;
+  if (deviceConfig.nameArchive) {
+    const archiveBytes = decodeDelegation(deviceConfig.nameArchive);
+    name = await Name.extract(agent, archiveBytes);
+  } else if (deviceConfig.nameDelegation) {
+    const nameBytes = decodeDelegation(deviceConfig.nameDelegation);
+    const { ok: nameDel } = await extract(nameBytes);
+    if (nameDel) name = Name.from(agent, [nameDel]);
+  }
+  if (!name) throw new Error("No name state available to grant from");
+  const nameDel = await name.grant(targetDID);
+  const { ok: nameArchive } = await nameDel.archive();
+  if (!nameArchive) throw new Error("Failed to archive name delegation");
+
+  // Plan delegation: re-delegate from stored plan delegation
+  if (!deviceConfig.planDelegation) {
+    throw new Error("No plan delegation to re-delegate");
+  }
+  const planBytes = decodeDelegation(deviceConfig.planDelegation);
+  const { ok: existingPlanDel } = await extract(planBytes);
+  if (!existingPlanDel)
+    throw new Error("Failed to extract plan delegation");
+  const planDel = await delegate({
+    issuer: agent,
+    audience,
+    capabilities: existingPlanDel.capabilities as any,
+    proofs: [existingPlanDel],
+    expiration: Infinity,
+  });
+  const { ok: planArchive } = await planDel.archive();
+  if (!planArchive) throw new Error("Failed to archive plan delegation");
+
+  return createDelegationBundle({
+    upload: uploadArchive,
+    name: nameArchive,
+    plan: planArchive,
+  });
 }
