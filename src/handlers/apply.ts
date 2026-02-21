@@ -8,71 +8,32 @@
 import { Revision } from "@storacha/ucn/pail";
 import * as Batch from "@storacha/ucn/pail/batch";
 import type {
-  ClockConnection,
-  NameView,
   ValueView,
-  EventBlock,
+  RevisionResult,
+  BlockFetcher,
 } from "@storacha/ucn/pail/api";
-import type { Block } from "multiformats";
-import { MemoryBlockstore, withCache } from "@storacha/ucn/block";
-
 import type { PailOp } from "../types/index.js";
-import type { WorkspaceBlockstore } from "../blockstore/index.js";
-
-export interface ApplyResult {
-  current: ValueView | null;
-  event: EventBlock | null;
-  revisionBlocks: Block[];
-  remainingOps: PailOp[];
-}
 
 export async function applyPendingOps(
-  blocks: WorkspaceBlockstore,
-  name: NameView,
+  blocks: BlockFetcher,
   current: ValueView | null,
   pendingOps: PailOp[],
-  options?: { remotes?: ClockConnection[] },
-): Promise<ApplyResult> {
-  const revisionBlocks: Block[] = [];
+): Promise<RevisionResult & { remainingOps: PailOp[] }> {
   let ops = [...pendingOps];
-
-  // Local cache so each step can read blocks produced by previous steps
-  const cache = new MemoryBlockstore();
-  const fetcher = withCache(blocks, cache);
-
-  const accumulate = (additions: Block[]) => {
-    for (const block of additions) {
-      cache.put(block);
-    }
-    revisionBlocks.push(...additions);
-  };
 
   if (!current) {
     const firstPut = ops.find((op) => op.type === "put" && op.value);
     if (firstPut?.value) {
-      const result = await Revision.v0Put(
-        fetcher,
-        firstPut.key,
-        firstPut.value,
-      );
-      accumulate(result.additions);
-
-      const pubResult = await Revision.publish(fetcher, name, result.revision, {
-        remotes: options?.remotes,
-      });
-      accumulate(pubResult.additions);
-      current = pubResult.value;
+      const result = await Revision.v0Put(blocks, firstPut.key, firstPut.value);
 
       return {
-        current,
-        event: result.revision.event,
-        revisionBlocks,
+        ...result,
         remainingOps: ops.filter((op) => op !== firstPut),
       };
     }
     throw new Error("No current value or pending puts to initialize with");
   }
-  const batcher = await Batch.create(fetcher, current);
+  const batcher = await Batch.create(blocks, current);
   for (const op of ops) {
     if (op.type === "put" && op.value) {
       await batcher.put(op.key, op.value);
@@ -81,17 +42,8 @@ export async function applyPendingOps(
     }
   }
   const result = await batcher.commit();
-  accumulate(result.additions);
-
-  const pubResult = await Revision.publish(fetcher, name, result.revision, {
-    remotes: options?.remotes,
-  });
-  accumulate(pubResult.additions);
-  current = pubResult.value;
   return {
-    current,
-    event: result.revision.event,
-    revisionBlocks,
+    ...result,
     remainingOps: [], // All ops were included in the batch, so none remain
   };
 }

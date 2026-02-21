@@ -46,6 +46,7 @@ import {
   delegatePlanningDelegationToKMS,
   makeDecryptFn,
 } from "./utils/crypto.js";
+import { publish } from "@storacha/ucn/pail/revision";
 
 /** Engine is either stopped or running with a name and client. */
 type State =
@@ -181,7 +182,7 @@ export class SyncEngine {
       this.workspace,
       this.current,
       this.blocks,
-      (block) => this.carFile!.put(block),
+      (block) => this.carFile!.put([block]),
       (block) => this.blocks.put(block),
       this.encryptionConfig,
       this.decryptionConfig && this.encryptedClient
@@ -221,23 +222,31 @@ export class SyncEngine {
       try {
         while (pendingOps.length > 0) {
           if (!this.carFile) {
-            throw new Error("CAR file not initialized");
-          }
-          const { current, revisionBlocks, event, remainingOps } =
-            await applyPendingOps(this.blocks, name, this.current, pendingOps);
-          this.current = current;
-          for (const block of revisionBlocks) {
-            await this.carFile.put(block);
-          }
-          await this.storeBlocks(revisionBlocks);
-          if (event) {
-            await this.carFile.put(event);
-            await this.storeBlocks([event]);
-          }
-          pendingOps = remainingOps;
-          await this.possiblyUploadCAR();
-          if (pendingOps.length > 0) {
             this.carFile = await makeTempCar();
+          }
+          const { revision, additions, remainingOps } = await applyPendingOps(
+            this.blocks,
+            this.current,
+            pendingOps,
+          );
+
+          await this.carFile.put(additions);
+          await this.storeBlocks(additions);
+          await this.carFile.put([revision.event]);
+          await this.storeBlocks([revision.event]);
+          await this.possiblyUploadCAR();
+          const { value, additions: publishAdditions } = await publish(
+            this.blocks,
+            name,
+            revision,
+          );
+          pendingOps = remainingOps;
+          this.current = value;
+          // save the next round of additions to CAR so they're ready to go if there are more pending ops, otherwise we would have to wait until the next sync call to upload them
+          if (publishAdditions.length > 0) {
+            this.carFile = await makeTempCar();
+            await this.carFile.put(publishAdditions);
+            await this.storeBlocks(publishAdditions);
           }
         }
       } catch (err) {

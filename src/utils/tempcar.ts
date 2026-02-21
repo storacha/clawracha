@@ -12,7 +12,7 @@ export interface WritableCar {
    * Write a block to the CAR file.
    * Must not be called after close/switchToReadable.
    */
-  put(block: Block): Promise<void>;
+  put(blocks: Block[]): Promise<void>;
   cleanup(): Promise<void>;
   /**
    * Close the writer and return a readable for upload.
@@ -44,9 +44,11 @@ export const makeTempCar = async (): Promise<WritableCar> => {
 
   let didWrite = false;
 
-  const put = async (block: Block) => {
+  const put = async (blocks: Block[]) => {
     didWrite = true;
-    await writer.put({ cid: block.cid as any, bytes: block.bytes });
+    for (const block of blocks) {
+      await writer.put({ cid: block.cid as any, bytes: block.bytes });
+    }
   };
 
   const switchToReadable = async (): Promise<ReadableCar | null> => {
