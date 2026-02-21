@@ -7,6 +7,7 @@ import * as CAR from "@ucanto/transport/car";
 import * as ed25519 from "@ucanto/principal/ed25519";
 
 import { Agent, Name, Revision } from "@storacha/ucn/pail";
+import { publish } from "@storacha/ucn/pail/revision";
 import type { ClockConnection, ValueView } from "@storacha/ucn/pail/api";
 import { MemoryBlockstore } from "@storacha/ucn/block";
 import { createServer, createService } from "@storacha/ucn/server";
@@ -70,6 +71,32 @@ const createTestEnv = async (sharedBlocks?: MemoryBlockstore) => {
 };
 
 /**
+ * Apply ops, store blocks, publish, store publish blocks, return current value.
+ * Mirrors the real sync flow: applyPendingOps → upload → publish.
+ */
+const applyAndPublish = async (
+  blocks: MemoryBlockstore,
+  name: ReturnType<typeof Name.from>,
+  current: ValueView | null,
+  ops: PailOp[],
+  remotes: ClockConnection[],
+): Promise<{ current: ValueView; remainingOps: PailOp[] }> => {
+  const result = await applyPendingOps(blocks, current, ops);
+  await storeBlocks(blocks, result.additions);
+  await storeBlocks(blocks, [result.revision.event]);
+
+  const pubResult = await publish(blocks, name, result.revision, {
+    remotes,
+  });
+  await storeBlocks(blocks, pubResult.additions);
+
+  return {
+    current: pubResult.value,
+    remainingOps: result.remainingOps,
+  };
+};
+
+/**
  * Read all entries from a pail value.
  */
 const getEntries = async (
@@ -102,17 +129,17 @@ describe("applyPendingOps", () => {
 
     const ops: PailOp[] = [{ type: "put", key: "docs/readme.md", value: cid }];
 
-    const result = await applyPendingOps(blocks, name, null, ops, {
-      remotes: [remote],
-    });
+    const { current } = await applyAndPublish(
+      blocks,
+      name,
+      null,
+      ops,
+      [remote],
+    );
 
-    expect(result.current).not.toBeNull();
-    expect(result.revisionBlocks.length).toBeGreaterThan(0);
+    expect(current).not.toBeNull();
 
-    // Store blocks so we can read entries
-    await storeBlocks(blocks, result.revisionBlocks);
-
-    const entries = await getEntries(blocks, result.current!);
+    const entries = await getEntries(blocks, current);
     expect(entries.size).toBe(1);
     expect(entries.get("docs/readme.md")).toBe(cid.toString());
   });
@@ -131,25 +158,29 @@ describe("applyPendingOps", () => {
     ];
 
     // Bootstrap applies first put via v0Put, returns rest as remainingOps
-    let result = await applyPendingOps(blocks, name, null, ops, {
-      remotes: [remote],
-    });
-    await storeBlocks(blocks, result.revisionBlocks);
+    let { current, remainingOps } = await applyAndPublish(
+      blocks,
+      name,
+      null,
+      ops,
+      [remote],
+    );
 
     // Apply remaining ops (must upload between each publish cycle)
-    while (result.remainingOps.length > 0) {
-      result = await applyPendingOps(
+    while (remainingOps.length > 0) {
+      const next = await applyAndPublish(
         blocks,
         name,
-        result.current,
-        result.remainingOps,
-        { remotes: [remote] },
+        current,
+        remainingOps,
+        [remote],
       );
-      await storeBlocks(blocks, result.revisionBlocks);
+      current = next.current;
+      remainingOps = next.remainingOps;
     }
 
-    expect(result.current).not.toBeNull();
-    const entries = await getEntries(blocks, result.current!);
+    expect(current).not.toBeNull();
+    const entries = await getEntries(blocks, current);
     expect(entries.size).toBe(3);
     expect(entries.get("a.txt")).toBe(cidA.toString());
     expect(entries.get("b.txt")).toBe(cidB.toString());
@@ -163,7 +194,7 @@ describe("applyPendingOps", () => {
     // Bootstrap with initial entries
     const cidA = await createTestCID("file-a");
     const cidB = await createTestCID("file-b");
-    const init = await applyPendingOps(
+    let { current, remainingOps } = await applyAndPublish(
       blocks,
       name,
       null,
@@ -171,27 +202,24 @@ describe("applyPendingOps", () => {
         { type: "put", key: "a.txt", value: cidA },
         { type: "put", key: "b.txt", value: cidB },
       ],
-      { remotes: [remote] },
+      [remote],
     );
-    await storeBlocks(blocks, init.revisionBlocks);
 
     // Apply remaining ops from bootstrap (v0Put only handles first put)
-    let current = init.current;
-    if (init.remainingOps.length > 0) {
-      const next = await applyPendingOps(
+    if (remainingOps.length > 0) {
+      const next = await applyAndPublish(
         blocks,
         name,
         current,
-        init.remainingOps,
-        { remotes: [remote] },
+        remainingOps,
+        [remote],
       );
-      await storeBlocks(blocks, next.revisionBlocks);
       current = next.current;
     }
 
     // Now apply mixed ops: add c.txt, delete a.txt
     const cidC = await createTestCID("file-c");
-    const result = await applyPendingOps(
+    const result = await applyAndPublish(
       blocks,
       name,
       current,
@@ -199,13 +227,12 @@ describe("applyPendingOps", () => {
         { type: "put", key: "c.txt", value: cidC },
         { type: "del", key: "a.txt" },
       ],
-      { remotes: [remote] },
+      [remote],
     );
 
     expect(result.current).not.toBeNull();
-    await storeBlocks(blocks, result.revisionBlocks);
 
-    const entries = await getEntries(blocks, result.current!);
+    const entries = await getEntries(blocks, result.current);
     expect(entries.size).toBe(2);
     expect(entries.has("a.txt")).toBe(false);
     expect(entries.get("b.txt")).toBe(cidB.toString());
@@ -213,11 +240,8 @@ describe("applyPendingOps", () => {
   });
 
   it("should throw when no ops and no current", async () => {
-    const agent = await Agent.generate();
-    const name = await Name.create(agent);
-
     await expect(
-      applyPendingOps(blocks, name, null, [], { remotes: [remote] }),
+      applyPendingOps(blocks, null, []),
     ).rejects.toThrow("No current value or pending puts to initialize with");
   });
 
@@ -237,14 +261,13 @@ describe("applyPendingOps", () => {
     const cid3 = await createTestCID("file-3");
 
     // Step 1: Agent A puts first key
-    const resultA1 = await applyPendingOps(
+    const resultA1 = await applyAndPublish(
       sharedBlocks,
       nameA,
       null,
       [{ type: "put", key: "one.txt", value: cid1 }],
-      { remotes: [env.remote] },
+      [env.remote],
     );
-    await storeBlocks(sharedBlocks, resultA1.revisionBlocks);
 
     // Step 2: Agent B resolves to get A's value
     const resolveB1 = await Revision.resolve(sharedBlocks, nameB, {
@@ -254,27 +277,25 @@ describe("applyPendingOps", () => {
     let currentB = resolveB1.value;
 
     // Step 3: Agent A puts second key
-    const resultA2 = await applyPendingOps(
+    const resultA2 = await applyAndPublish(
       sharedBlocks,
       nameA,
       resultA1.current,
       [{ type: "put", key: "two.txt", value: cid2 }],
-      { remotes: [env.remote] },
+      [env.remote],
     );
-    await storeBlocks(sharedBlocks, resultA2.revisionBlocks);
 
-    // Step 4: Agent B (still on old value) puts third key and applies
-    const resultB = await applyPendingOps(
+    // Step 4: Agent B (still on old value) puts third key and publishes
+    const resultB = await applyAndPublish(
       sharedBlocks,
       nameB,
       currentB,
       [{ type: "put", key: "three.txt", value: cid3 }],
-      { remotes: [env.remote] },
+      [env.remote],
     );
-    await storeBlocks(sharedBlocks, resultB.revisionBlocks);
 
     // Agent B should see all three keys
-    const entriesB = await getEntries(sharedBlocks, resultB.current!);
+    const entriesB = await getEntries(sharedBlocks, resultB.current);
     expect(entriesB.size).toBe(3);
     expect(entriesB.get("one.txt")).toBe(cid1.toString());
     expect(entriesB.get("two.txt")).toBe(cid2.toString());
@@ -295,7 +316,7 @@ describe("applyPendingOps", () => {
 
     // Both agents should have converged to the same root
     expect(resolveA.value.root.toString()).toBe(
-      resultB.current!.root.toString(),
+      resultB.current.root.toString(),
     );
   });
 });

@@ -103,22 +103,26 @@ Splits changes into markdown vs regular files:
 
 1. Snapshot current pail entries (`beforeEntries`)
 2. If pending ops exist:
-   - `applyPendingOps()` — batch puts + individual dels into a UCN revision
-   - Publish via `Revision.publish()`
-   - Upload CAR to Storacha
+   - `applyPendingOps()` — batch puts + individual dels into a UCN revision (does **not** publish)
+   - **Upload CAR to Storacha** — blocks must be available remotely before other peers see the update
+   - `publish()` — publish the revision to UCN (clock update). Publish additions (clock/name blocks) go into a fresh CAR for the next round.
    - If `remainingOps` (from bootstrap v0Put), repeat with fresh CAR
 3. If no pending ops: just `Revision.resolve()` to pull remote
 4. Snapshot pail entries again (`afterEntries`)
 5. Diff before/after → `diffRemoteChanges()` → `applyRemoteChanges()`
 6. Update `lastSync` timestamp
 
+**Upload-before-publish** is critical: if we published first, other peers would see the clock update and try to fetch blocks that haven't been uploaded yet.
+
 The sync is serialized through `syncLock` (promise chain) to prevent concurrent syncs.
 
 #### applyPendingOps (handlers/apply.ts)
 
+A pure function that produces a `RevisionResult` (revision + block additions) without publishing. The caller is responsible for uploading blocks and then publishing separately.
+
 - Uses `Batch.create()` for multiple ops (UCN's batch API supports puts + dels)
 - Bootstrap case: when no current value exists, uses `Revision.v0Put()` for the first put, then returns remaining ops for the next round (caller must upload between rounds so blocks are available remotely)
-- Uses a `MemoryBlockstore` cache so each step can read blocks produced by previous steps
+- Returns `{ revision, additions, remainingOps }` — no side effects on the clock
 
 #### applyRemoteChanges (handlers/remote.ts)
 
