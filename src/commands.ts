@@ -8,7 +8,11 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
-import type { DeviceConfig, SpaceAccess, SyncPluginConfig } from "./types/index.js";
+import type {
+  DeviceConfig,
+  SpaceAccess,
+  SyncPluginConfig,
+} from "./types/index.js";
 import { SyncEngine } from "./sync.js";
 import { FileWatcher } from "./watcher.js";
 import {
@@ -16,7 +20,7 @@ import {
   decodeDelegation,
   readDelegationArg,
 } from "./utils/delegation.js";
-import { createStorachaClient } from "./utils/client.js";
+import { createStorachaClient } from "./utils/config.js";
 import {
   createDelegationBundle,
   extractDelegationBundle,

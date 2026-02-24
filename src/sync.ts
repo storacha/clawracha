@@ -11,7 +11,7 @@
 
 import { CID } from "multiformats/cid";
 // UCN Pail imports
-import { Agent, Name, NoValueError, Revision } from "@storacha/ucn/pail";
+import { NoValueError, Revision } from "@storacha/ucn/pail";
 import type { NameView, ValueView } from "@storacha/ucn/pail/api";
 
 import type {
@@ -19,6 +19,7 @@ import type {
   FileChange,
   PailOp,
   DeviceConfig,
+  CryptoConfig,
 } from "./types/index.js";
 import type { Block } from "multiformats";
 import {
@@ -31,21 +32,12 @@ import { processChanges } from "./handlers/process.js";
 import { diffRemoteChanges, type PailEntries } from "./utils/differ.js";
 import { WritableCar, makeTempCar } from "./utils/tempcar.js";
 import { Client } from "@storacha/client";
-import { createStorachaClient } from "./utils/client.js";
-import { decodeDelegation, encodeDelegation } from "./utils/delegation.js";
-import { extract } from "@storacha/client/delegation";
-import type {
-  EncryptionConfig,
-  DecryptionConfig,
-  EncryptedClient,
-} from "@storacha/encrypt-upload-client/types";
 import {
-  makeEncryptionConfig,
-  makeDecryptionConfig,
-  getEncryptedClient,
-  delegatePlanningDelegationToKMS,
-  makeDecryptFn,
-} from "./utils/crypto.js";
+  createStorachaClient,
+  resolveNameFromConfig,
+  resolveCryptoConfig,
+} from "./utils/config.js";
+import { encodeDelegation } from "./utils/delegation.js";
 import { publish } from "@storacha/ucn/pail/revision";
 
 /** Engine is either stopped or running with a name and client. */
@@ -67,9 +59,7 @@ export class SyncEngine {
   private carFile: WritableCar | null = null;
   private lastSync: number | null = null;
   private syncLock: Promise<void> = Promise.resolve();
-  private encryptionConfig?: EncryptionConfig;
-  private decryptionConfig?: DecryptionConfig;
-  private encryptedClient?: EncryptedClient;
+  private crypto: CryptoConfig | null = null;
 
   constructor(workspace: string) {
     this.workspace = workspace;
@@ -82,58 +72,12 @@ export class SyncEngine {
    */
   async init(config: DeviceConfig): Promise<void> {
     const storachaClient = await createStorachaClient(config);
-    const agent = Agent.parse(config.agentKey);
-
-    let name: NameView;
-    if (config.nameArchive) {
-      // Restore from previously saved archive (has full state)
-      const archiveBytes = decodeDelegation(config.nameArchive);
-      name = await Name.extract(agent, archiveBytes);
-    } else if (config.nameDelegation) {
-      // Reconstruct from delegation (granted by another device)
-      const nameBytes = decodeDelegation(config.nameDelegation);
-      const { ok: delegation } = await extract(nameBytes);
-      if (!delegation) throw new Error("Failed to extract name delegation");
-      name = Name.from(agent, [delegation]);
-    } else {
-      // First device — create a new name
-      name = await Name.create(agent);
-    }
+    const name = await resolveNameFromConfig(config);
 
     this.state = { initialized: true, running: true, name, storachaClient };
 
     // Set up encryption for private spaces
-    if (config.access?.type === "private") {
-      if (!config.planDelegation) {
-        throw new Error(
-          "Private space requires a plan delegation for KMS access",
-        );
-      }
-      const planBytes = decodeDelegation(config.planDelegation);
-      const { ok: planDel } = await extract(planBytes);
-      if (!planDel) throw new Error("Failed to extract plan delegation");
-
-      const planDelForKMS = await delegatePlanningDelegationToKMS(
-        agent,
-        planDel,
-      );
-      const uploadBytes = decodeDelegation(config.uploadDelegation!);
-      const { ok: uploadDel } = await extract(uploadBytes);
-      if (!uploadDel) throw new Error("Failed to extract upload delegation");
-      this.encryptionConfig = makeEncryptionConfig(
-        agent,
-        config.spaceDID as `did:key:${string}`,
-        [planDelForKMS, uploadDel],
-      );
-
-      // For decrypt, uploadDelegation covers space/content/decrypt
-      this.decryptionConfig = makeDecryptionConfig(
-        config.spaceDID as `did:key:${string}`,
-        uploadDel,
-        [planDelForKMS, uploadDel],
-      );
-      this.encryptedClient = await getEncryptedClient(storachaClient);
-    }
+    this.crypto = await resolveCryptoConfig(config, storachaClient);
 
     try {
       const result = await Revision.resolve(this.blocks, name);
@@ -182,12 +126,10 @@ export class SyncEngine {
       this.workspace,
       this.current,
       this.blocks,
-      (block) => this.carFile!.put([block]),
-      (block) => this.blocks.put(block),
-      this.encryptionConfig,
-      this.decryptionConfig && this.encryptedClient
-        ? makeDecryptFn(this.encryptedClient, this.decryptionConfig, name.agent)
-        : undefined,
+      async (block) => {
+        await this.storeForUpload([block]);
+      },
+      this.crypto,
     );
     this.pendingOps.push(...pendingOps);
   }
@@ -230,10 +172,8 @@ export class SyncEngine {
             pendingOps,
           );
 
-          await this.carFile.put(additions);
-          await this.storeBlocks(additions);
-          await this.carFile.put([revision.event]);
-          await this.storeBlocks([revision.event]);
+          await this.storeForUpload(additions);
+          await this.storeForUpload([revision.event]);
           await this.possiblyUploadCAR();
           const { value, additions: publishAdditions } = await publish(
             this.blocks,
@@ -245,8 +185,7 @@ export class SyncEngine {
           // save the next round of additions to CAR so they're ready to go if there are more pending ops, otherwise we would have to wait until the next sync call to upload them
           if (publishAdditions.length > 0) {
             this.carFile = await makeTempCar();
-            await this.carFile.put(publishAdditions);
-            await this.storeBlocks(publishAdditions);
+            await this.storeForUpload(publishAdditions);
           }
         }
       } catch (err) {
@@ -262,14 +201,7 @@ export class SyncEngine {
       await applyRemoteChanges(remoteChanges, afterEntries, this.workspace, {
         blocks: this.blocks,
         current: this.current ?? undefined,
-        decrypt:
-          this.decryptionConfig && this.encryptedClient
-            ? makeDecryptFn(
-                this.encryptedClient,
-                this.decryptionConfig,
-                name.agent,
-              )
-            : undefined,
+        decrypt: this.crypto?.decryptCid,
       });
     }
 
@@ -357,14 +289,7 @@ export class SyncEngine {
       await applyRemoteChanges(allPaths, entries, this.workspace, {
         blocks: this.blocks,
         current: this.current ?? undefined,
-        decrypt:
-          this.decryptionConfig && this.encryptedClient
-            ? makeDecryptFn(
-                this.encryptedClient,
-                this.decryptionConfig,
-                name.agent,
-              )
-            : undefined,
+        decrypt: this.crypto?.decryptCid,
       });
     }
 
@@ -420,5 +345,10 @@ export class SyncEngine {
     for (const block of blocks) {
       await this.blocks.put(block);
     }
+  }
+
+  private async storeForUpload(blocks: Block[]): Promise<void> {
+    await this.carFile!.put(blocks);
+    await this.storeBlocks(blocks);
   }
 }

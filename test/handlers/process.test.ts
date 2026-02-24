@@ -118,7 +118,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "add", path: "hello.txt" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -131,7 +131,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "unlink", path: "gone.txt" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
 
     expect(ops).toHaveLength(0);
     expect(collected).toHaveLength(0);
@@ -145,7 +145,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "add", path: "b.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -160,7 +160,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "change", path: "a.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -175,7 +175,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "change", path: "a.txt" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(0);
     expect(collected.length).toBeGreaterThan(0);
@@ -188,7 +188,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "unlink", path: "a.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("del");
@@ -202,7 +202,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "unlink", path: "nonexistent.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(0);
   });
@@ -212,18 +212,13 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "add", path: "notes.md" }];
 
     const { sink, collected } = makeBlockCollector();
-    const stored: Block[] = [];
-    const store = async (block: Block) => { stored.push(block); };
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, store);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
     expect(ops[0].key).toBe("notes.md");
     expect(ops[0].value).toBeDefined();
-    // Markdown blocks should be sinked for CAR upload AND stored locally
     expect(collected.length).toBeGreaterThan(0);
-    expect(stored.length).toBeGreaterThan(0);
-    expect(collected.length).toBe(stored.length);
   });
 
   it("markdown file update → mdsync put (with current)", async () => {
@@ -245,15 +240,12 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "change", path: "readme.md" }];
 
     const { sink, collected } = makeBlockCollector();
-    const stored: Block[] = [];
-    const store = async (block: Block) => { stored.push(block); };
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, store);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
     expect(ops[0].key).toBe("readme.md");
     expect(collected.length).toBeGreaterThan(0);
-    expect(stored.length).toBeGreaterThan(0);
   });
 
   it("mixed markdown and regular files", async () => {
@@ -265,7 +257,7 @@ describe("processChanges", () => {
     ];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
 
     expect(ops).toHaveLength(2);
     const mdOp = ops.find((o) => o.key === "readme.md");
@@ -292,7 +284,7 @@ describe("processChanges", () => {
 
     const changes: FileChange[] = [{ type: "unlink", path: "delete.md" }];
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("del");

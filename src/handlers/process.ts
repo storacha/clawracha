@@ -16,19 +16,15 @@ import type {
   ValueView,
 } from "@storacha/ucn/pail/api";
 import type { Block } from "multiformats";
-import type { FileChange, PailOp } from "../types/index.js";
-import type { EncryptionConfig } from "@storacha/encrypt-upload-client/types";
+import type { CryptoConfig, FileChange, PailOp } from "../types/index.js";
 import { encodeFiles } from "../utils/encoder.js";
 import { encryptToBlockStream } from "../utils/crypto.js";
 import * as mdsync from "../mdsync/index.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-/** Callback to persist a block to the CAR file for upload. */
+/** Callback to persist a block (CAR file, local blockstore, etc). */
 export type BlockSink = (block: Block) => Promise<void>;
-
-/** Callback to persist a block to the local blockstore for future reads. */
-export type BlockStore = (block: Block) => Promise<void>;
 
 const isMarkdown = (filePath: string) => filePath.endsWith(".md");
 
@@ -55,9 +51,7 @@ export async function processChanges(
   current: ValueView | null,
   blocks: BlockFetcher,
   sink: BlockSink,
-  store?: BlockStore,
-  encryptionConfig?: EncryptionConfig,
-  decrypt?: (cid: CID) => Promise<Uint8Array>,
+  cryptoConfig: CryptoConfig | null,
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
@@ -71,14 +65,14 @@ export async function processChanges(
 
   const files: { path: string; rootCID: UnknownLink }[] = [];
 
-  if (encryptionConfig) {
+  if (cryptoConfig) {
     // Private space: encrypt each file
     for (const relPath of toEncode) {
       try {
         const fileBytes = await fs.readFile(path.join(workspace, relPath));
         const encStream = await encryptToBlockStream(
           new Blob([fileBytes as Uint8Array<ArrayBuffer>]),
-          encryptionConfig,
+          cryptoConfig.encryptionConfig,
         );
         const rootCID = await drainBlockStream(encStream, sink);
         files.push({ path: relPath, rootCID });
@@ -120,21 +114,25 @@ export async function processChanges(
       "utf-8",
     );
     const block = current
-      ? await mdsync.put(blocks, current, change.path, content, decrypt)
+      ? await mdsync.put(
+          blocks,
+          current,
+          change.path,
+          content,
+          cryptoConfig?.decryptCid,
+        )
       : await mdsync.v0Put(content);
     if (!block) {
       continue; // No change detected, skip writing a new entry.
     }
 
-    if (encryptionConfig) {
+    if (cryptoConfig) {
       // Private space: encrypt the single-block entry
       const encStream = await encryptToBlockStream(
         new Blob([block.bytes as Uint8Array<ArrayBuffer>]),
-        encryptionConfig,
+        cryptoConfig.encryptionConfig,
       );
       const rootCID = await drainBlockStream(encStream, sink);
-      // Store unencrypted block locally for future resolveValue calls
-      if (store) await store(block);
       pendingOps.push({
         type: "put",
         key: change.path,
@@ -143,7 +141,6 @@ export async function processChanges(
     } else {
       // Public space: store block directly
       await sink(block);
-      if (store) await store(block);
       pendingOps.push({
         type: "put",
         key: change.path,

@@ -5,6 +5,7 @@
 import type { UnknownLink } from "multiformats";
 import type { Block } from "multiformats";
 import type { CID } from "multiformats/cid";
+import type { EncryptionConfig } from "@storacha/encrypt-upload-client/types";
 
 /** Plugin configuration (from openclaw.plugin.json schema) */
 export interface SyncPluginConfig {
@@ -72,6 +73,12 @@ export interface EncodedFile {
   path: string;
   blocks: ReadableStream<Block>;
   size: number;
+}
+
+/** Bundled encryption + decryption config for private spaces. */
+export interface CryptoConfig {
+  encryptionConfig: EncryptionConfig;
+  decryptCid: (cid: CID) => Promise<Uint8Array>;
 }
 
 /** Diff operation for pail */
