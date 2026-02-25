@@ -12,7 +12,7 @@
 import { CID } from "multiformats/cid";
 // UCN Pail imports
 import { NoValueError, Revision } from "@storacha/ucn/pail";
-import type { NameView, ValueView } from "@storacha/ucn/pail/api";
+import type { NameView, ValueView, ClockConnection } from "@storacha/ucn/pail/api";
 
 import type {
   SyncState,
@@ -54,6 +54,7 @@ export interface SyncDeps {
   client: StorageClient;
   encoder: Encoder;
   contentFetcher: ContentFetcher;
+  remotes?: ClockConnection[];
 }
 export class SyncEngine {
   private workspace: string;
@@ -68,6 +69,7 @@ export class SyncEngine {
   private name: NameView;
   private encoder: Encoder;
   private contentFetcher: ContentFetcher;
+  private remotes?: ClockConnection[];
   constructor(workspace: string, deps: SyncDeps) {
     this.workspace = workspace;
     this.blocks = deps.blocks;
@@ -75,12 +77,15 @@ export class SyncEngine {
     this.name = deps.name;
     this.encoder = deps.encoder;
     this.contentFetcher = deps.contentFetcher;
+    this.remotes = deps.remotes;
   }
 
   async start(): Promise<void> {
     this.state = { running: true };
     try {
-      const result = await Revision.resolve(this.blocks, this.name);
+      const result = await Revision.resolve(this.blocks, this.name, {
+        remotes: this.remotes,
+      });
       this.current = result.value;
       await this.storeBlocks(result.additions);
     } catch (err) {
@@ -169,6 +174,7 @@ export class SyncEngine {
       try {
         const result = await Revision.resolve(this.blocks, this.name, {
           base: this.current ?? undefined,
+          remotes: this.remotes,
         });
         await this.storeBlocks(result.additions);
         this.current = result.value;
@@ -196,6 +202,7 @@ export class SyncEngine {
             this.blocks,
             this.name,
             revision,
+            { remotes: this.remotes },
           );
           pendingOps = remainingOps;
           this.current = value;
@@ -290,6 +297,7 @@ export class SyncEngine {
     try {
       const result = await Revision.resolve(this.blocks, this.name, {
         base: this.current ?? undefined,
+        remotes: this.remotes,
       });
       await this.storeBlocks(result.additions);
       this.current = result.value;

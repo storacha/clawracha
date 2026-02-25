@@ -63,5 +63,12 @@ export function diffRemoteChanges(
     }
   }
 
+  // Detect deletions: paths in before but not in after
+  for (const path of before.keys()) {
+    if (!after.has(path)) {
+      changed.push(path);
+    }
+  }
+
   return changed;
 }
