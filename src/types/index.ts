@@ -77,6 +77,11 @@ export interface CryptoConfig {
   decryptionConfig: DecryptionConfig;
 }
 
+/** Minimal storage client interface (subset of @storacha/client used by SyncEngine). */
+export interface StorageClient {
+  uploadCAR(car: import("@storacha/upload-client/types").BlobLike): Promise<unknown>;
+}
+
 export type Encoder = (file: Blob) => Promise<ReadableStream<Block>>;
 
 export type ContentFetcher = (cid: CID) => Promise<Uint8Array>;

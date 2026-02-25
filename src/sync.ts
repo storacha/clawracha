@@ -21,6 +21,7 @@ import type {
   DeviceConfig,
   ContentFetcher,
   Encoder,
+  StorageClient,
 } from "./types/index.js";
 import type { Block } from "multiformats";
 import {
@@ -32,7 +33,7 @@ import { applyRemoteChanges } from "./handlers/remote.js";
 import { processChanges } from "./handlers/process.js";
 import { diffRemoteChanges, type PailEntries } from "./utils/differ.js";
 import { WritableCar, makeTempCar } from "./utils/tempcar.js";
-import { Client } from "@storacha/client";
+import type { Client } from "@storacha/client";
 import {
   createStorachaClient,
   resolveNameFromConfig,
@@ -50,7 +51,7 @@ type State = { running: false } | { running: true };
 export interface SyncDeps {
   blocks: WorkspaceBlockstore;
   name: NameView;
-  client: Client;
+  client: StorageClient;
   encoder: Encoder;
   contentFetcher: ContentFetcher;
 }
@@ -63,7 +64,7 @@ export class SyncEngine {
   private carFile: WritableCar | null = null;
   private lastSync: number | null = null;
   private syncLock: Promise<void> = Promise.resolve();
-  private client: Client;
+  private client: StorageClient;
   private name: NameView;
   private encoder: Encoder;
   private contentFetcher: ContentFetcher;
