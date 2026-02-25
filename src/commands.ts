@@ -122,8 +122,8 @@ export async function startWorkspaceSync(
   if (!deviceConfig || !deviceConfig.setupComplete) {
     return null;
   }
-  const engine = new SyncEngine(workspace);
-  await engine.init(deviceConfig);
+  const engine = await SyncEngine.fromConfig(workspace, deviceConfig);
+  await engine.start();
 
   const watcher = new FileWatcher({
     workspace,

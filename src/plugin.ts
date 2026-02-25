@@ -498,8 +498,8 @@ export default function plugin(api: OpenClawPluginApi) {
             if (activeSync) {
               engine = activeSync.engine;
             } else {
-              engine = new SyncEngine(workspace);
-              await engine.init(deviceConfig);
+              engine = await SyncEngine.fromConfig(workspace, deviceConfig);
+              await engine.start();
             }
 
             const state = await engine.inspect();

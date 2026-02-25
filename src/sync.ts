@@ -19,7 +19,8 @@ import type {
   FileChange,
   PailOp,
   DeviceConfig,
-  CryptoConfig,
+  ContentFetcher,
+  Encoder,
 } from "./types/index.js";
 import type { Block } from "multiformats";
 import {
@@ -39,48 +40,46 @@ import {
 } from "./utils/config.js";
 import { encodeDelegation } from "./utils/delegation.js";
 import { publish } from "@storacha/ucn/pail/revision";
+import { makeEncoder } from "./utils/encoder.js";
+import { makeContentFetcher } from "./utils/contentfetcher.js";
+import { Agent } from "@storacha/ucn/pail";
 
 /** Engine is either stopped or running with a name and client. */
-type State =
-  | { initialized: false; running: false }
-  | { initialized: true; running: true; name: NameView; storachaClient: Client }
-  | {
-      initialized: true;
-      running: false;
-      name: NameView;
-      storachaClient: Client;
-    };
+type State = { running: false } | { running: true };
+
+export interface SyncDeps {
+  blocks: WorkspaceBlockstore;
+  name: NameView;
+  client: Client;
+  encoder: Encoder;
+  contentFetcher: ContentFetcher;
+}
 export class SyncEngine {
   private workspace: string;
   private blocks: WorkspaceBlockstore;
-  private state: State = { initialized: false, running: false };
+  private state: State = { running: false };
   private current: ValueView | null = null;
   private pendingOps: PailOp[] = [];
   private carFile: WritableCar | null = null;
   private lastSync: number | null = null;
   private syncLock: Promise<void> = Promise.resolve();
-  private crypto: CryptoConfig | null = null;
-
-  constructor(workspace: string) {
+  private client: Client;
+  private name: NameView;
+  private encoder: Encoder;
+  private contentFetcher: ContentFetcher;
+  constructor(workspace: string, deps: SyncDeps) {
     this.workspace = workspace;
-    this.blocks = createWorkspaceBlockstore(workspace);
+    this.blocks = deps.blocks;
+    this.client = deps.client;
+    this.name = deps.name;
+    this.encoder = deps.encoder;
+    this.contentFetcher = deps.contentFetcher;
   }
 
-  /**
-   * Initialize sync engine with device config.
-   * Creates the Storacha client and resolves the UCN name.
-   */
-  async init(config: DeviceConfig): Promise<void> {
-    const storachaClient = await createStorachaClient(config);
-    const name = await resolveNameFromConfig(config);
-
-    this.state = { initialized: true, running: true, name, storachaClient };
-
-    // Set up encryption for private spaces
-    this.crypto = await resolveCryptoConfig(config, storachaClient);
-
+  async start(): Promise<void> {
+    this.state = { running: true };
     try {
-      const result = await Revision.resolve(this.blocks, name);
+      const result = await Revision.resolve(this.blocks, this.name);
       this.current = result.value;
       await this.storeBlocks(result.additions);
     } catch (err) {
@@ -93,23 +92,40 @@ export class SyncEngine {
   }
 
   /**
-   * Require running state or throw.
+   * Initialize sync engine with device config.
+   * Creates the Storacha client and resolves the UCN name.
    */
-  private requireRunning(): { name: NameView; storachaClient: Client } {
-    if (!this.state.running) {
-      throw new Error("Sync engine not running");
-    }
-    return this.state;
+  static async fromConfig(
+    workspace: string,
+    config: DeviceConfig,
+  ): Promise<SyncEngine> {
+    const blocks = createWorkspaceBlockstore(workspace);
+    const client = await createStorachaClient(config);
+    const name = await resolveNameFromConfig(config);
+
+    // Set up encryption for private spaces
+    const crypto = await resolveCryptoConfig(config);
+
+    const encoder = makeEncoder(crypto);
+    const agent = Agent.parse(config.agentKey);
+    const contentFetcher = makeContentFetcher(crypto, blocks, client, agent);
+    return new SyncEngine(workspace, {
+      blocks,
+      name,
+      client,
+      encoder,
+      contentFetcher,
+    });
   }
 
   /**
-   * Require state is initialized or throw.
+   * Require running state or throw.
    */
-  private requireInitialized(): { name: NameView; storachaClient: Client } {
-    if (!this.state.initialized) {
-      throw new Error("Sync engine not initialized");
+  private requireRunning() {
+    if (!this.state.running) {
+      throw new Error("Sync engine not running");
     }
-    return this.state;
+    return;
   }
 
   /**
@@ -117,7 +133,6 @@ export class SyncEngine {
    * Can be called even when not running (accumulates pending ops).
    */
   async processChanges(changes: FileChange[]): Promise<void> {
-    const { name } = this.requireInitialized();
     if (!this.carFile) {
       this.carFile = await makeTempCar();
     }
@@ -129,7 +144,8 @@ export class SyncEngine {
       async (block) => {
         await this.storeForUpload([block]);
       },
-      this.crypto,
+      this.encoder,
+      this.contentFetcher,
     );
     this.pendingOps.push(...pendingOps);
   }
@@ -144,13 +160,13 @@ export class SyncEngine {
   }
 
   private async _syncInner(): Promise<void> {
-    const { name } = this.requireRunning();
+    this.requireRunning();
     const beforeEntries = await this.getPailEntries();
 
     if (this.pendingOps.length === 0) {
       // No pending ops — just pull remote
       try {
-        const result = await Revision.resolve(this.blocks, name, {
+        const result = await Revision.resolve(this.blocks, this.name, {
           base: this.current ?? undefined,
         });
         await this.storeBlocks(result.additions);
@@ -177,7 +193,7 @@ export class SyncEngine {
           await this.possiblyUploadCAR();
           const { value, additions: publishAdditions } = await publish(
             this.blocks,
-            name,
+            this.name,
             revision,
           );
           pendingOps = remainingOps;
@@ -198,11 +214,16 @@ export class SyncEngine {
     const afterEntries = await this.getPailEntries();
     const remoteChanges = diffRemoteChanges(beforeEntries, afterEntries);
     if (remoteChanges.length > 0) {
-      await applyRemoteChanges(remoteChanges, afterEntries, this.workspace, {
-        blocks: this.blocks,
-        current: this.current ?? undefined,
-        decrypt: this.crypto?.decryptCid,
-      });
+      await applyRemoteChanges(
+        remoteChanges,
+        afterEntries,
+        this.workspace,
+        this.contentFetcher,
+        {
+          blocks: this.blocks,
+          current: this.current ?? undefined,
+        },
+      );
     }
 
     this.lastSync = Date.now();
@@ -213,12 +234,12 @@ export class SyncEngine {
    */
   private async possiblyUploadCAR(): Promise<void> {
     if (this.carFile) {
-      const { storachaClient } = this.requireRunning();
+      this.requireRunning();
       const readableCar = await this.carFile.switchToReadable();
       this.carFile = null;
       if (readableCar) {
         try {
-          await storachaClient.uploadCAR(readableCar.readable);
+          await this.client.uploadCAR(readableCar.readable);
         } finally {
           await readableCar.cleanup();
         }
@@ -248,14 +269,7 @@ export class SyncEngine {
    */
   async stop(): Promise<void> {
     this.syncLock = this.syncLock.then(() => {
-      this.state = this.state.initialized
-        ? {
-            initialized: true,
-            running: false,
-            name: this.state.name,
-            storachaClient: this.state.storachaClient,
-          }
-        : { initialized: false, running: false };
+      this.state = { running: false };
     });
     return this.syncLock;
   }
@@ -271,10 +285,9 @@ export class SyncEngine {
   }
 
   private async _pullRemoteInner(): Promise<number> {
-    const { name } = this.requireRunning();
-
+    this.requireRunning();
     try {
-      const result = await Revision.resolve(this.blocks, name, {
+      const result = await Revision.resolve(this.blocks, this.name, {
         base: this.current ?? undefined,
       });
       await this.storeBlocks(result.additions);
@@ -286,11 +299,16 @@ export class SyncEngine {
     const entries = await this.getPailEntries();
     if (entries.size > 0) {
       const allPaths = [...entries.keys()];
-      await applyRemoteChanges(allPaths, entries, this.workspace, {
-        blocks: this.blocks,
-        current: this.current ?? undefined,
-        decrypt: this.crypto?.decryptCid,
-      });
+      await applyRemoteChanges(
+        allPaths,
+        entries,
+        this.workspace,
+        this.contentFetcher,
+        {
+          blocks: this.blocks,
+          current: this.current ?? undefined,
+        },
+      );
     }
 
     this.lastSync = Date.now();
@@ -336,8 +354,7 @@ export class SyncEngine {
   }
 
   async exportNameArchive(): Promise<string> {
-    const { name } = this.requireInitialized();
-    const bytes = await name.archive();
+    const bytes = await this.name.archive();
     return encodeDelegation(bytes);
   }
 

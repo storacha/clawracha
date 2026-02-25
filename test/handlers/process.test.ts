@@ -8,9 +8,12 @@ import * as Value from "@storacha/ucn/pail/value";
 import { MemoryBlockstore } from "@storacha/ucn/block";
 import type { ValueView } from "@storacha/ucn/pail/api";
 import type { Block } from "multiformats";
+import type { CID } from "multiformats/cid";
 
 import { processChanges } from "../../src/handlers/process.js";
-import type { FileChange } from "../../src/types/index.js";
+import { makeEncoder } from "../../src/utils/encoder.js";
+import type { ContentFetcher, Encoder, FileChange } from "../../src/types/index.js";
+import { exporter } from "ipfs-unixfs-exporter";
 
 // --- Helpers ---
 
@@ -32,18 +35,56 @@ const makeBlockCollector = () => {
   return { sink, collected };
 };
 
+/** Public-space (UnixFS) encoder. */
+const encoder: Encoder = makeEncoder(null);
+
 /**
- * Encode a file and extract root CID + blocks for bootstrapping pail state.
+ * Create a contentFetcher that reads UnixFS content from a blockstore.
+ */
+const makeTestContentFetcher = (blocks: MemoryBlockstore): ContentFetcher => {
+  return async (cid: CID): Promise<Uint8Array> => {
+    const entry = await exporter(cid, {
+      get: async (c: CID) => {
+        const block = await blocks.get(c);
+        if (!block) throw new Error(`Block not found for CID ${c}`);
+        return block.bytes as Uint8Array;
+      },
+    });
+    if (entry.type !== "file" && entry.type !== "raw") {
+      throw new Error(`Expected file or raw, got ${entry.type}`);
+    }
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of entry.content()) {
+      chunks.push(chunk);
+    }
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return result;
+  };
+};
+
+/** A no-op contentFetcher for tests that don't need it. */
+const nullContentFetcher: ContentFetcher = async () => {
+  throw new Error("contentFetcher should not be called");
+};
+
+/**
+ * Encode a file via the public encoder and return root CID + blocks.
  */
 const encodeFileForBootstrap = async (
   workspace: string,
   relativePath: string,
 ): Promise<{ rootCID: any; blocks: Block[] }> => {
-  const { encodeWorkspaceFile } = await import("../../src/utils/encoder.js");
-  const encoded = await encodeWorkspaceFile(workspace, relativePath);
+  const fileBytes = await fs.readFile(path.join(workspace, relativePath));
+  const stream = await encoder(new Blob([fileBytes]));
   const blocks: Block[] = [];
   let rootCID: any = null;
-  const reader = encoded.blocks.getReader();
+  const reader = (stream as ReadableStream<Block>).getReader();
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -118,7 +159,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "add", path: "hello.txt" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, encoder, nullContentFetcher);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -131,7 +172,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "unlink", path: "gone.txt" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, encoder, nullContentFetcher);
 
     expect(ops).toHaveLength(0);
     expect(collected).toHaveLength(0);
@@ -145,7 +186,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "add", path: "b.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -160,7 +201,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "change", path: "a.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -175,10 +216,9 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "change", path: "a.txt" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(0);
-    expect(collected.length).toBeGreaterThan(0);
   });
 
   it("existing current + delete existing key → one delete op", async () => {
@@ -188,7 +228,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "unlink", path: "a.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("del");
@@ -202,7 +242,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "unlink", path: "nonexistent.txt" }];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(0);
   });
@@ -212,7 +252,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "add", path: "notes.md" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, encoder, nullContentFetcher);
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -223,15 +263,27 @@ describe("processChanges", () => {
 
   it("markdown file update → mdsync put (with current)", async () => {
     const blocks = new MemoryBlockstore();
-    // Bootstrap with a markdown file via mdsync
+    // Bootstrap with a markdown file via mdsync, then encode through encoder
     const mdsync = await import("../../src/mdsync/index.js");
-    const block = await mdsync.v0Put("# Old\n");
-    await blocks.put(block);
+    const mdBlock = await mdsync.v0Put("# Old\n");
+
+    // Encode the mdsync block through the encoder (like processChanges does)
+    const encStream = await encoder(new Blob([mdBlock.bytes as Uint8Array<ArrayBuffer>]));
+    const encBlocks: Block[] = [];
+    let rootCID: any = null;
+    const reader = (encStream as ReadableStream<Block>).getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      encBlocks.push(value);
+      rootCID = value.cid;
+    }
+    for (const b of encBlocks) await blocks.put(b as any);
 
     const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
     const agent = await Agent.generate();
     const name = await Name.create(agent);
-    const init = await Revision.v0Put(blocks, "readme.md", block.cid);
+    const init = await Revision.v0Put(blocks, "readme.md", rootCID);
     await storeBlocks(blocks, init.additions);
     await blocks.put(init.revision.event as any);
     const { value } = await (await import("@storacha/ucn/pail/value")).from(blocks, name, init.revision);
@@ -240,7 +292,7 @@ describe("processChanges", () => {
     const changes: FileChange[] = [{ type: "change", path: "readme.md" }];
 
     const { sink, collected } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("put");
@@ -257,7 +309,7 @@ describe("processChanges", () => {
     ];
 
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, null);
+    const ops = await processChanges(changes, tmpDir, null, { get: async () => undefined }, sink, encoder, nullContentFetcher);
 
     expect(ops).toHaveLength(2);
     const mdOp = ops.find((o) => o.key === "readme.md");
@@ -271,20 +323,31 @@ describe("processChanges", () => {
   it("markdown delete → del op", async () => {
     const blocks = new MemoryBlockstore();
     const mdsync = await import("../../src/mdsync/index.js");
-    const block = await mdsync.v0Put("# Delete me\n");
-    await blocks.put(block);
+    const mdBlock = await mdsync.v0Put("# Delete me\n");
+
+    const encStream = await encoder(new Blob([mdBlock.bytes as Uint8Array<ArrayBuffer>]));
+    const encBlocks: Block[] = [];
+    let rootCID: any = null;
+    const rdr = (encStream as ReadableStream<Block>).getReader();
+    while (true) {
+      const { done, value } = await rdr.read();
+      if (done) break;
+      encBlocks.push(value);
+      rootCID = value.cid;
+    }
+    for (const b of encBlocks) await blocks.put(b as any);
 
     const { Agent, Name, Revision } = await import("@storacha/ucn/pail");
     const agent = await Agent.generate();
     const name = await Name.create(agent);
-    const init = await Revision.v0Put(blocks, "delete.md", block.cid);
+    const init = await Revision.v0Put(blocks, "delete.md", rootCID);
     await storeBlocks(blocks, init.additions);
     await blocks.put(init.revision.event as any);
     const { value } = await (await import("@storacha/ucn/pail/value")).from(blocks, name, init.revision);
 
     const changes: FileChange[] = [{ type: "unlink", path: "delete.md" }];
     const { sink } = makeBlockCollector();
-    const ops = await processChanges(changes, tmpDir, value, blocks, sink, null);
+    const ops = await processChanges(changes, tmpDir, value, blocks, sink, encoder, makeTestContentFetcher(blocks));
 
     expect(ops).toHaveLength(1);
     expect(ops[0].type).toBe("del");

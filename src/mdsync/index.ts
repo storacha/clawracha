@@ -254,12 +254,12 @@ export const v0Put = async (newMarkdown: string): Promise<Block> => {
  */
 export const put = async (
   blocks: BlockFetcher,
+  contentFetcher: (cid: CID) => Promise<Uint8Array>,
   current: ValueView,
   key: string,
   newMarkdown: string,
-  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<Block | null> => {
-  const mdEntry = await resolveValue(blocks, current, key, decrypt);
+  const mdEntry = await resolveValue(blocks, contentFetcher, current, key);
   if (!mdEntry) {
     // Key doesn't exist yet — bootstrap with firstPut.
     const entry = firstPut(
@@ -305,9 +305,9 @@ export const put = async (
  */
 const resolveValue = async (
   blocks: BlockFetcher,
+  contentFetcher: (cid: CID) => Promise<Uint8Array>,
   current: ValueView,
   key: string,
-  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<DeserializedMarkdownEntry | undefined> => {
   const mdEntryBlockCid = await Pail.get(blocks, current.root, key);
   if (!mdEntryBlockCid) {
@@ -320,18 +320,10 @@ const resolveValue = async (
   );
   const events = new EventFetcher<Operation>(blocks);
 
-  // Fetch entry bytes: decrypt callback for private spaces, or raw block fetch.
-  const getEntryBytes = async (cid: CID): Promise<Uint8Array> => {
-    if (decrypt) return decrypt(cid);
-    const block = await blocks.get(cid);
-    if (!block) throw new Error(`Could not find block for CID ${cid}`);
-    return block.bytes;
-  };
-
   // Fast path: single head, no merge needed.
   if (current.revision.length === 1) {
     return decodeMarkdownEntry({
-      bytes: await getEntryBytes(mdEntryBlockCid as CID),
+      bytes: await contentFetcher(mdEntryBlockCid as CID),
     });
   }
 
@@ -353,7 +345,7 @@ const resolveValue = async (
   let mdEntry: DeserializedMarkdownEntry | undefined;
   if (rootMDEntryCid) {
     mdEntry = await decodeMarkdownEntry({
-      bytes: await getEntryBytes(rootMDEntryCid as CID),
+      bytes: await contentFetcher(rootMDEntryCid as CID),
     });
   }
 
@@ -398,7 +390,7 @@ const resolveValue = async (
         );
       }
       const newMDEntry = await decodeMarkdownEntry({
-        bytes: await getEntryBytes(mdEntryCid as CID),
+        bytes: await contentFetcher(mdEntryCid as CID),
       });
 
       if (newMDEntry.type === "initial") {
@@ -447,11 +439,11 @@ const resolveValue = async (
  */
 export const get = async (
   blocks: BlockFetcher,
+  contentFetcher: (cid: CID) => Promise<Uint8Array>,
   current: ValueView,
   key: string,
-  decrypt?: (cid: CID) => Promise<Uint8Array>,
 ): Promise<string | undefined> => {
-  const mdEntry = await resolveValue(blocks, current, key, decrypt);
+  const mdEntry = await resolveValue(blocks, contentFetcher, current, key);
   if (!mdEntry) {
     return undefined;
   }

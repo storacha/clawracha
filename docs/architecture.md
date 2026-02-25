@@ -51,10 +51,11 @@ src/
 └── utils/
     ├── bundle.ts      # Delegation bundle pack/unpack (single CAR with upload+name+plan+access)
     ├── client.ts      # createStorachaClient() — builds Client from DeviceConfig
-    ├── crypto.ts      # Encryption/decryption helpers (KMS adapter, encrypt/decrypt functions)
+    ├── contentfetcher.ts # makeContentFetcher() — CID→bytes (UnixFS export or KMS decrypt)
+    ├── crypto.ts      # Encryption helpers (KMS adapter, encryptToBlockStream)
     ├── delegation.ts  # Delegation CID encoding/decoding (CIDv1 + identity multihash + base64)
     ├── differ.ts      # diffEntries() and diffRemoteChanges() — pail state diffing
-    ├── encoder.ts     # encodeWorkspaceFile() — UnixFS encoding via upload-client
+    ├── encoder.ts     # makeEncoder() — Blob→blocks (UnixFS or encrypted, depending on config)
     ├── ignore.ts      # readIgnoreFile() — .clawrachaignore parser
     ├── tempcar.ts     # WritableCar — temp file CAR writer for streaming uploads
     └── workspace.ts   # resolveAgentWorkspace() — mirrors OpenClaw's workspace resolution
@@ -67,7 +68,8 @@ src/
 1. Plugin registers a background service (`storacha-sync`)
 2. On start, iterates all agents in `config.agents.list`
 3. For each agent with a completed setup (`.storacha/config.json` has `setupComplete: true`):
-   - Creates a `SyncEngine` and initializes it with `DeviceConfig`
+   - Creates a `SyncEngine` via `SyncEngine.fromConfig(workspace, deviceConfig)` — this builds all dependencies (Storacha client, UCN name, encoder, content fetcher) and injects them
+   - Calls `engine.start()` to resolve the current revision
    - Creates a `FileWatcher` pointed at the workspace
    - Stores the pair in `activeSyncers` map
 
@@ -84,18 +86,20 @@ FileWatcher.onChange(changes)
 
 #### processChanges (handlers/process.ts)
 
+Takes an `Encoder` (Blob→blocks) and `ContentFetcher` (CID→bytes), both injected by SyncEngine. This makes processChanges agnostic to whether the space is public or private.
+
 Splits changes into markdown vs regular files:
 
 **Regular files:**
-- Public: UnixFS encode via `createFileEncoderStream` → drain blocks → root CID
-- Private: Read file bytes → `encryptToBlockStream` → drain blocks → root CID
-- Compare root CID against existing pail entry → skip if unchanged
+- Read file bytes from disk
+- Fetch existing content via `contentFetcher(existingCID)` and compare bytes — skip if unchanged (this is critical for encrypted spaces where re-encryption produces different CIDs for the same content)
+- Encode via `encoder(blob)` → drain blocks → root CID
+- Emit `put` op
 
 **Markdown files (.md):**
-- `mdsync.put()` — resolves existing value (merging concurrent heads), computes RGA changeset, applies it
+- `mdsync.put()` — resolves existing value via `contentFetcher`, merges concurrent heads, computes RGA changeset, applies it
 - `mdsync.v0Put()` — first write, bootstraps RGA tree
-- Public: store block directly, CID = block CID
-- Private: encrypt the single block → root CID; also store unencrypted locally for future CRDT resolution
+- Result block bytes are encoded through `encoder()` like regular files — this means even small CRDT entries are UnixFS-wrapped (or encrypted), providing a uniform CID format in the pail
 
 **Deletes:** Check if key exists in pail, emit `del` op if so.
 
@@ -126,12 +130,13 @@ A pure function that produces a `RevisionResult` (revision + block additions) wi
 
 #### applyRemoteChanges (handlers/remote.ts)
 
+Takes a `ContentFetcher` (CID→bytes), injected by SyncEngine.
+
 For each changed path:
 
 - **Deleted remotely** → `fs.unlink()`
-- **Markdown** → `mdsync.get()` (CRDT resolve + serialize to string) → `fs.writeFile()`
-- **Regular file, private** → decrypt via `makeDecryptFn()` → `fs.writeFile()`
-- **Regular file, public** → fetch from IPFS gateway (`https://storacha.link/ipfs/{cid}`) → `fs.writeFile()`
+- **Markdown** → `mdsync.get()` (CRDT resolve via `contentFetcher` + serialize to string) → `fs.writeFile()`
+- **Regular file** → `contentFetcher(cid)` → `fs.writeFile()` (handles both public UnixFS reassembly and private decryption transparently)
 
 ## Blockstore Architecture
 
@@ -238,7 +243,21 @@ This matches the Storacha CLI's delegation format.
 
 ## Encryption (Private Spaces)
 
-For private spaces, all content is encrypted before upload:
+For private spaces, all content is encrypted before upload. The encryption/decryption logic is abstracted behind two interfaces — `Encoder` and `ContentFetcher` — so the sync engine and handlers are agnostic to access type.
+
+### Encoder and ContentFetcher
+
+Both are created at `SyncEngine.fromConfig()` time based on the space's access config:
+
+- **`makeEncoder(cryptoConfig)`** (`utils/encoder.ts`):
+  - Public: wraps `createFileEncoderStream` (UnixFS encoding)
+  - Private: wraps `encryptToBlockStream` (KMS-based encryption)
+  - Signature: `(blob: Blob) => Promise<ReadableStream<Block>>`
+
+- **`makeContentFetcher(cryptoConfig, blocks, client, agent)`** (`utils/contentfetcher.ts`):
+  - Public: uses `ipfs-unixfs-exporter` to reassemble content from local blockstore (which falls back to gateway for missing blocks)
+  - Private: delegates `space/content/decrypt` per-CID (15-minute expiry), calls `decryptFile` via KMS adapter
+  - Signature: `(cid: CID) => Promise<Uint8Array>`
 
 ### Encrypt Path
 
@@ -250,12 +269,12 @@ For private spaces, all content is encrypted before upload:
 
 ### Decrypt Path
 
-1. `makeDecryptFn()` returns a `(cid: CID) => Promise<Uint8Array>` closure
-2. On each call:
+1. `makeContentFetcher()` returns a `(cid: CID) => Promise<Uint8Array>` closure
+2. On each call (private spaces):
    - Delegates `space/content/decrypt` scoped to the specific CID, 15-minute expiry
-   - Calls `encryptedClient.retrieveAndDecryptFile(cid, config)`
+   - Calls `decryptFile()` from `@storacha/encrypt-upload-client/utils/decrypt` with KMS adapter, client, and local blockstore
    - Drains the decrypted stream to bytes
-3. Used by both `applyRemoteChanges` (regular files) and `mdsync` (markdown entries)
+3. Used by both `applyRemoteChanges` (regular files) and `mdsync` (markdown entries) via the same interface
 
 ### KMS Details
 

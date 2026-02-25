@@ -16,9 +16,12 @@ import type {
   ValueView,
 } from "@storacha/ucn/pail/api";
 import type { Block } from "multiformats";
-import type { CryptoConfig, FileChange, PailOp } from "../types/index.js";
-import { encodeFiles } from "../utils/encoder.js";
-import { encryptToBlockStream } from "../utils/crypto.js";
+import type {
+  ContentFetcher,
+  Encoder,
+  FileChange,
+  PailOp,
+} from "../types/index.js";
 import * as mdsync from "../mdsync/index.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -51,7 +54,8 @@ export async function processChanges(
   current: ValueView | null,
   blocks: BlockFetcher,
   sink: BlockSink,
-  cryptoConfig: CryptoConfig | null,
+  encoder: Encoder,
+  contentFetcher: ContentFetcher,
 ): Promise<PailOp[]> {
   const pendingOps: PailOp[] = [];
 
@@ -63,46 +67,33 @@ export async function processChanges(
     .filter((c) => c.type !== "unlink")
     .map((c) => c.path);
 
-  const files: { path: string; rootCID: UnknownLink }[] = [];
-
-  if (cryptoConfig) {
-    // Private space: encrypt each file
-    for (const relPath of toEncode) {
-      try {
-        const fileBytes = await fs.readFile(path.join(workspace, relPath));
-        const encStream = await encryptToBlockStream(
-          new Blob([fileBytes as Uint8Array<ArrayBuffer>]),
-          cryptoConfig.encryptionConfig,
-        );
-        const rootCID = await drainBlockStream(encStream, sink);
-        files.push({ path: relPath, rootCID });
-      } catch (err: any) {
-        if (err.code === "ENOENT") {
-          console.warn(`File not found during encoding: ${relPath}`);
-          continue;
+  for (const relPath of toEncode) {
+    try {
+      const fileBytes = await fs.readFile(path.join(workspace, relPath));
+      const existing = current
+        ? await Revision.get(blocks, current, relPath)
+        : null;
+      if (existing) {
+        const existingBytes = await contentFetcher(existing as CID);
+        if (Buffer.compare(existingBytes, fileBytes) === 0) {
+          continue; // No change detected, skip encoding/uploading.
         }
-        throw err;
       }
-    }
-  } else {
-    // Public space: UnixFS encode
-    const encoded = await encodeFiles(workspace, toEncode);
-    for (const file of encoded) {
-      const rootCID = await drainBlockStream(file.blocks as any, sink);
-      files.push({ path: file.path, rootCID });
-    }
-  }
-
-  for (const file of files) {
-    const existing = current
-      ? await Revision.get(blocks, current, file.path)
-      : null;
-    if (!existing || !existing.equals(file.rootCID)) {
+      const encStream = await encoder(
+        new Blob([fileBytes as Uint8Array<ArrayBuffer>]),
+      );
+      const rootCID = await drainBlockStream(encStream, sink);
       pendingOps.push({
         type: "put",
-        key: file.path,
-        value: file.rootCID as CID,
+        key: relPath,
+        value: rootCID as CID,
       });
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        console.warn(`File not found during encoding: ${relPath}`);
+        continue;
+      }
+      throw err;
     }
   }
 
@@ -114,39 +105,21 @@ export async function processChanges(
       "utf-8",
     );
     const block = current
-      ? await mdsync.put(
-          blocks,
-          current,
-          change.path,
-          content,
-          cryptoConfig?.decryptCid,
-        )
+      ? await mdsync.put(blocks, contentFetcher, current, change.path, content)
       : await mdsync.v0Put(content);
     if (!block) {
       continue; // No change detected, skip writing a new entry.
     }
 
-    if (cryptoConfig) {
-      // Private space: encrypt the single-block entry
-      const encStream = await encryptToBlockStream(
-        new Blob([block.bytes as Uint8Array<ArrayBuffer>]),
-        cryptoConfig.encryptionConfig,
-      );
-      const rootCID = await drainBlockStream(encStream, sink);
-      pendingOps.push({
-        type: "put",
-        key: change.path,
-        value: rootCID as CID,
-      });
-    } else {
-      // Public space: store block directly
-      await sink(block);
-      pendingOps.push({
-        type: "put",
-        key: change.path,
-        value: block.cid as CID,
-      });
-    }
+    const encStream = await encoder(
+      new Blob([block.bytes as Uint8Array<ArrayBuffer>]),
+    );
+    const rootCID = await drainBlockStream(encStream, sink);
+    pendingOps.push({
+      type: "put",
+      key: change.path,
+      value: rootCID as CID,
+    });
   }
 
   // --- Deletes (both regular and markdown) ---

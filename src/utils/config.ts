@@ -15,9 +15,7 @@ import { decodeDelegation } from "./delegation.js";
 import {
   makeEncryptionConfig,
   makeDecryptionConfig,
-  getEncryptedClient,
   delegatePlanningDelegationToKMS,
-  makeDecryptFn,
 } from "./crypto.js";
 import type { DeviceConfig, CryptoConfig } from "../types/index.js";
 import type { Client } from "@storacha/client";
@@ -42,8 +40,7 @@ export async function createStorachaClient(
 
   // Import the upload delegation (space → agent)
   const uploadBytes = decodeDelegation(config.uploadDelegation);
-  const { ok: uploadDelegation, error: uploadErr } =
-    await extract(uploadBytes);
+  const { ok: uploadDelegation, error: uploadErr } = await extract(uploadBytes);
   if (!uploadDelegation) {
     throw new Error(`Failed to extract upload delegation: ${uploadErr}`);
   }
@@ -88,14 +85,11 @@ export async function resolveNameFromConfig(
  */
 export async function resolveCryptoConfig(
   config: DeviceConfig,
-  storachaClient: Client,
 ): Promise<CryptoConfig | null> {
   if (config.access?.type !== "private") return null;
 
   if (!config.planDelegation) {
-    throw new Error(
-      "Private space requires a plan delegation for KMS access",
-    );
+    throw new Error("Private space requires a plan delegation for KMS access");
   }
 
   const agent = PailAgent.parse(config.agentKey);
@@ -122,10 +116,8 @@ export async function resolveCryptoConfig(
     [planDelForKMS, uploadDel],
   );
 
-  const encryptedClient = await getEncryptedClient(storachaClient);
-
   return {
     encryptionConfig,
-    decryptCid: makeDecryptFn(encryptedClient, decryptionConfig, agent),
+    decryptionConfig,
   };
 }

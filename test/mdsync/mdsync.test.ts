@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { MemoryBlockstore } from "@storacha/ucn/block";
 import * as Revision from "@storacha/ucn/pail/revision";
 import * as Value from "@storacha/ucn/pail/value";
-import { Block } from "multiformats";
+import { Block, CID } from "multiformats";
 import * as mdsync from "../../src/mdsync/index.js";
 
 class TestBlockstore extends MemoryBlockstore {
@@ -15,6 +15,14 @@ class TestBlockstore extends MemoryBlockstore {
 
 const mockName = {} as any;
 
+/** Helper: make a content fetcher that just reads the blocks */
+function makeContentFetcher(blocks: TestBlockstore) {
+  return async (cid: CID) => {
+    const block = await blocks.get(cid);
+    if (!block) throw new Error(`Block not found for CID ${cid}`);
+    return block.bytes;
+  };
+}
 /** Helper: v0Put markdown, store block, create ValueView. */
 async function initPail(blocks: TestBlockstore, key: string, md: string) {
   const block = await mdsync.v0Put(md);
@@ -33,7 +41,13 @@ async function updatePail(
   key: string,
   md: string,
 ) {
-  const block = (await mdsync.put(blocks, current, key, md))!;
+  const block = (await mdsync.put(
+    blocks,
+    makeContentFetcher(blocks),
+    current,
+    key,
+    md,
+  ))!;
   await blocks.put(block);
   const rev = await Revision.put(blocks, current, key, block.cid);
   await blocks.putMany(rev.additions);
@@ -48,7 +62,12 @@ describe("mdsync", () => {
     const md = "# Hello\n\nThis is a test.\n";
 
     const value = await initPail(blocks, "test.md", md);
-    const retrieved = await mdsync.get(blocks, value, "test.md");
+    const retrieved = await mdsync.get(
+      blocks,
+      makeContentFetcher(blocks),
+      value,
+      "test.md",
+    );
     expect(retrieved).toBe(md);
   });
 
@@ -60,7 +79,12 @@ describe("mdsync", () => {
     const v1 = await initPail(blocks, "test.md", md1);
     const v2 = await updatePail(blocks, v1, "test.md", md2);
 
-    const retrieved = await mdsync.get(blocks, v2, "test.md");
+    const retrieved = await mdsync.get(
+      blocks,
+      makeContentFetcher(blocks),
+      v2,
+      "test.md",
+    );
     expect(retrieved).toBe(md2);
   });
 
@@ -68,7 +92,12 @@ describe("mdsync", () => {
     const blocks = new TestBlockstore();
     const value = await initPail(blocks, "test.md", "# Hello\n");
 
-    const retrieved = await mdsync.get(blocks, value, "missing.md");
+    const retrieved = await mdsync.get(
+      blocks,
+      makeContentFetcher(blocks),
+      value,
+      "missing.md",
+    );
     expect(retrieved).toBeUndefined();
   });
 
@@ -89,7 +118,12 @@ describe("mdsync", () => {
       "# V3\n\nNew paragraph.\n\nAnother one.\n",
     );
 
-    const retrieved = await mdsync.get(blocks, v3, "doc.md");
+    const retrieved = await mdsync.get(
+      blocks,
+      makeContentFetcher(blocks),
+      v3,
+      "doc.md",
+    );
     expect(retrieved).toBe("# V3\n\nNew paragraph.\n\nAnother one.\n");
   });
 
@@ -102,6 +136,7 @@ describe("mdsync", () => {
     // Two concurrent edits branching from v0
     const block1 = (await mdsync.put(
       blocks,
+      makeContentFetcher(blocks),
       v0,
       "doc.md",
       "# Doc\n\nOriginal.\n\nFrom replica 1.\n",
@@ -113,6 +148,7 @@ describe("mdsync", () => {
 
     const block2 = (await mdsync.put(
       blocks,
+      makeContentFetcher(blocks),
       v0,
       "doc.md",
       "# Doc\n\nOriginal.\n\nFrom replica 2.\n",
@@ -130,7 +166,12 @@ describe("mdsync", () => {
       rev2.revision,
     );
 
-    const result = await mdsync.get(blocks, merged, "doc.md");
+    const result = await mdsync.get(
+      blocks,
+      makeContentFetcher(blocks),
+      merged,
+      "doc.md",
+    );
     expect(result).toBeDefined();
     // Both edits should be present in the resolved document
     expect(result).toContain("From replica 1.");
@@ -146,6 +187,7 @@ describe("mdsync", () => {
     // Two concurrent puts for a NEW key "doc.md" that doesn't exist yet
     const block1 = (await mdsync.put(
       blocks,
+      makeContentFetcher(blocks),
       v0,
       "doc.md",
       "# Doc\n\nFrom replica 1.\n",
@@ -157,6 +199,7 @@ describe("mdsync", () => {
 
     const block2 = (await mdsync.put(
       blocks,
+      makeContentFetcher(blocks),
       v0,
       "doc.md",
       "# Doc\n\nFrom replica 2.\n",
@@ -174,7 +217,12 @@ describe("mdsync", () => {
       rev2.revision,
     );
 
-    const result = await mdsync.get(blocks, merged, "doc.md");
+    const result = await mdsync.get(
+      blocks,
+      makeContentFetcher(blocks),
+      merged,
+      "doc.md",
+    );
     expect(result).toBeDefined();
     expect(result).toContain("From replica 1.");
     expect(result).toContain("From replica 2.");
