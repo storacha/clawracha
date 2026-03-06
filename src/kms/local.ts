@@ -33,6 +33,16 @@ export async function startLocalKms(): Promise<string> {
     },
   });
 
+  if (serverProcess.stdout) {
+    serverProcess.stdout.on("data", (data) => {
+      console.log(`[local-kms] ${data.toString().trim()}`);
+    });
+  }
+  if (serverProcess.stderr) {
+    serverProcess.stderr.on("data", (data) => {
+      console.error(`[local-kms] ${data.toString().trim()}`);
+    });
+  }
   serverProcess.on("exit", (code) => {
     console.error(`[local-kms] Process exited with code ${code}`);
     serverProcess = null;
