@@ -16,6 +16,7 @@ import {
   makeEncryptionConfig,
   makeDecryptionConfig,
   delegatePlanningDelegationToKMS,
+  resolveKmsEndpoint,
 } from "./crypto.js";
 import type { DeviceConfig, CryptoConfig } from "../types/index.js";
 import type { Client } from "@storacha/client";
@@ -83,14 +84,24 @@ export async function resolveNameFromConfig(
  * Build encryption/decryption config from device config.
  * Returns null for public spaces.
  */
+/**
+ * Build encryption/decryption config from device config.
+ * Returns null for public spaces.
+ *
+ * Resolves the KMS endpoint from the provider field, and returns it
+ * alongside the encryption/decryption configs so callers (encoder,
+ * content fetcher) can use the correct adapter.
+ */
 export async function resolveCryptoConfig(
   config: DeviceConfig,
 ): Promise<CryptoConfig | null> {
-  if (config.access?.type !== "private") return null;
+  if (!config.kmsProvider) return null;
 
   if (!config.planDelegation) {
     throw new Error("Private space requires a plan delegation for KMS access");
   }
+
+  const kmsEndpoint = await resolveKmsEndpoint(config.kmsProvider ?? "google");
 
   const agent = PailAgent.parse(config.agentKey);
 
@@ -98,7 +109,11 @@ export async function resolveCryptoConfig(
   const { ok: planDel } = await extract(planBytes);
   if (!planDel) throw new Error("Failed to extract plan delegation");
 
-  const planDelForKMS = await delegatePlanningDelegationToKMS(agent, planDel);
+  const planDelForKMS = await delegatePlanningDelegationToKMS(
+    agent,
+    planDel,
+    kmsEndpoint,
+  );
 
   const uploadBytes = decodeDelegation(config.uploadDelegation!);
   const { ok: uploadDel } = await extract(uploadBytes);
@@ -108,6 +123,8 @@ export async function resolveCryptoConfig(
     agent,
     config.spaceDID as `did:key:${string}`,
     [planDelForKMS, uploadDel],
+    config.kmsLocation,
+    config.kmsKeyring,
   );
 
   const decryptionConfig = makeDecryptionConfig(
@@ -119,5 +136,6 @@ export async function resolveCryptoConfig(
   return {
     encryptionConfig,
     decryptionConfig,
+    kmsEndpoint,
   };
 }

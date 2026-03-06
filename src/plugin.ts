@@ -32,6 +32,8 @@ import { CAR } from "@ucanto/core";
 import { identity } from "multiformats/hashes/identity";
 import { base64 } from "multiformats/bases/base64";
 
+import { startLocalKms, stopLocalKms } from "./kms/local.js";
+
 const activeSyncers = new Map<string, WorkspaceSync>();
 
 // --- Config helpers ---
@@ -104,8 +106,34 @@ export default function plugin(api: OpenClawPluginApi) {
 
       const agentIds = getAgentIds(ctx.config);
 
+      // Pre-scan configs to check if any workspace needs local KMS
+      const workspaceMap = new Map<
+        string,
+        { workspace: string; agentId: string }
+      >();
+      let needs1Password = false;
       for (const agentId of agentIds) {
         const workspace = resolveAgentWorkspace(ctx.config, agentId);
+        const config = await loadDeviceConfig(workspace);
+        if (config?.setupComplete) {
+          workspaceMap.set(workspace, { workspace, agentId });
+          if (config.kmsProvider === "1password") needs1Password = true;
+        }
+      }
+
+      // Start local KMS server if any workspace uses 1Password
+      if (needs1Password) {
+        try {
+          const did = await startLocalKms();
+          ctx.logger.info(`[local-kms] Started, DID: ${did}`);
+        } catch (err: any) {
+          ctx.logger.warn(
+            `[local-kms] Failed to start: ${err.message}. 1Password workspaces will fail to sync.`,
+          );
+        }
+      }
+
+      for (const { workspace, agentId } of workspaceMap.values()) {
         try {
           const sync = await startWorkspaceSync(
             workspace,
@@ -141,6 +169,7 @@ export default function plugin(api: OpenClawPluginApi) {
         ctx.logger.info(`[${sync.agentId}] Stopped syncing: ${workspace}`);
       }
       activeSyncers.clear();
+      stopLocalKms();
     },
   });
 
@@ -449,7 +478,7 @@ export default function plugin(api: OpenClawPluginApi) {
               `Plan delegation: ${deviceConfig.planDelegation ? "✅" : "❌ not set"}`,
             );
             console.log(`Space DID: ${deviceConfig.spaceDID ?? "unknown"}`);
-            console.log(`Access: ${deviceConfig.access?.type ?? "unknown"}`);
+            console.log(`Access: ${deviceConfig.storachaAccess?.type ?? "unknown"}`);
             console.log(
               `Name Archive: ${deviceConfig.nameArchive ? "saved" : "not created"}`,
             );

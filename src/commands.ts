@@ -238,19 +238,51 @@ export async function doSetup(
     ["Public", "Private (encrypted)"],
   );
 
-  const access =
-    accessChoice === "Private (encrypted)"
-      ? {
-          type: "private" as const,
-          encryption: {
-            provider: "google-kms" as const,
-            algorithm: "RSA_DECRYPT_OAEP_3072_SHA256" as const,
-          },
-        }
-      : { type: "public" as const };
+  let kmsProvider: "google" | "1password" | undefined;
+  let kmsLocation: string | undefined;
+  let kmsKeyring: string | undefined;
+  let access: SpaceAccess;
+
+  if (accessChoice === "Private (encrypted)") {
+    const { prompt: askPrompt } = await import("./prompts.js");
+    const providerChoice = await choose(
+      "\nKey management provider:\n" +
+        "  ⚠️  Storacha Cloud requires a paid plan\n" +
+        "  🔒 1Password runs a local KMS server",
+      ["Storacha Cloud (Google KMS)", "1Password (local)"],
+    );
+    kmsProvider =
+      providerChoice === "1Password (local)" ? "1password" : "google";
+
+    if (kmsProvider === "google") {
+      // Google KMS: Storacha manages server-side encryption
+      access = {
+        type: "private" as const,
+        encryption: {
+          provider: "google-kms" as const,
+          algorithm: "RSA_DECRYPT_OAEP_3072_SHA256" as const,
+        },
+      };
+    } else {
+      // 1Password: encryption is local, Storacha sees a public space
+      access = { type: "public" as const };
+      kmsLocation = await askPrompt("1Password account name: ");
+      if (!kmsLocation) {
+        throw new Error(
+          "1Password account name is required for encrypted spaces",
+        );
+      }
+      const vaultAnswer = await askPrompt(
+        'Vault name (default "Storacha Space Keys"): ',
+      );
+      kmsKeyring = vaultAnswer || "Storacha Space Keys";
+    }
+  } else {
+    access = { type: "public" as const };
+  }
 
   console.log(`Creating space "${spaceName}"...`);
-  const space = await tempClient.createSpace(spaceName, { account, access });
+  const space = await tempClient.createSpace(spaceName, { account, access } as any);
   await tempClient.setCurrentSpace(space.did());
 
   // Delegate space access from the new space to our clawracha agent
@@ -286,7 +318,10 @@ export async function doSetup(
   deviceConfig.uploadDelegation = encodeDelegation(uploadArchive);
   deviceConfig.planDelegation = encodeDelegation(planArchive);
   deviceConfig.spaceDID = space.did();
-  deviceConfig.access = access;
+  deviceConfig.storachaAccess = access;
+  deviceConfig.kmsProvider = kmsProvider;
+  deviceConfig.kmsLocation = kmsLocation;
+  deviceConfig.kmsKeyring = kmsKeyring;
   deviceConfig.setupComplete = true;
   await saveDeviceConfig(workspace, deviceConfig);
 
@@ -378,8 +413,11 @@ export async function doJoin(
   deviceConfig.planDelegation = encodeDelegation(bundle.plan);
   deviceConfig.spaceDID = spaceDID ?? undefined;
   if (bundle.access) {
-    deviceConfig.access = bundle.access as SpaceAccess;
+    deviceConfig.storachaAccess = bundle.access as SpaceAccess;
   }
+  deviceConfig.kmsProvider = bundle.kmsProvider;
+  deviceConfig.kmsLocation = bundle.kmsLocation;
+  deviceConfig.kmsKeyring = bundle.kmsKeyring;
   deviceConfig.setupComplete = true;
   await saveDeviceConfig(workspace, deviceConfig);
 
@@ -468,6 +506,9 @@ export async function doGrant(
     upload: uploadArchive,
     name: nameArchive,
     plan: planArchive,
-    access: deviceConfig.access,
+    access: deviceConfig.storachaAccess,
+    kmsProvider: deviceConfig.kmsProvider,
+    kmsLocation: deviceConfig.kmsLocation,
+    kmsKeyring: deviceConfig.kmsKeyring,
   });
 }
