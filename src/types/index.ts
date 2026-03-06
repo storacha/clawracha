@@ -45,8 +45,14 @@ export interface DeviceConfig {
   planDelegation?: string;
   /** Space DID extracted from upload delegation */
   spaceDID?: string;
-  /** Space access type — determines if content is encrypted */
-  access?: SpaceAccess;
+  /** Space access type from Storacha's perspective (private = server-side KMS) */
+  storachaAccess?: SpaceAccess;
+  /** KMS provider — determines URL/DID at runtime */
+  kmsProvider?: "google" | "1password";
+  /** KMS location — 1Password account name (only for 1password provider) */
+  kmsLocation?: string;
+  /** KMS keyring — 1Password vault name (only for 1password provider) */
+  kmsKeyring?: string;
   /** Whether setup is complete (watcher won't start without this) */
   setupComplete?: boolean;
 }
@@ -71,10 +77,17 @@ export interface FileChange {
   path: string; // relative to workspace
 }
 
+/** Resolved KMS service endpoint. */
+export interface KmsEndpoint {
+  url: string;
+  did: string;
+}
+
 /** Bundled encryption + decryption config for private spaces. */
 export interface CryptoConfig {
   encryptionConfig: EncryptionConfig;
   decryptionConfig: DecryptionConfig;
+  kmsEndpoint: KmsEndpoint;
 }
 
 /** Minimal storage client interface (subset of @storacha/client used by SyncEngine). */

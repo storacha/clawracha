@@ -28,7 +28,7 @@ export const makeContentFetcher = (
         proofs: [decryptionConfig.decryptDelegation],
       });
       const { stream } = await decryptFile(
-        getKMSCryptoAdapter(),
+        getKMSCryptoAdapter(cryptoConfig.kmsEndpoint),
         client,
         readableStorageFromFetcher(blocks),
         cid,

@@ -14,6 +14,9 @@ export interface DelegationBundle {
   name: Uint8Array;
   plan: Uint8Array;
   access?: { type: string; encryption?: { provider: string; algorithm: string } };
+  kmsProvider?: "google" | "1password";
+  kmsLocation?: string;
+  kmsKeyring?: string;
 }
 
 /**
@@ -80,5 +83,8 @@ export async function extractDelegationBundle(
     name: value.name as Uint8Array,
     plan: value.plan as Uint8Array,
     access: value.access as DelegationBundle["access"],
+    kmsProvider: value.kmsProvider as DelegationBundle["kmsProvider"],
+    kmsLocation: value.kmsLocation as string | undefined,
+    kmsKeyring: value.kmsKeyring as string | undefined,
   };
 }

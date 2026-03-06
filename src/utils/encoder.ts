@@ -7,7 +7,11 @@ import type { Block } from "multiformats";
 export const makeEncoder = (cryptoConfig: CryptoConfig | null): Encoder => {
   if (cryptoConfig) {
     return (input: BlobLike) => {
-      return encryptToBlockStream(input, cryptoConfig.encryptionConfig);
+      return encryptToBlockStream(
+        input,
+        cryptoConfig.encryptionConfig,
+        cryptoConfig.kmsEndpoint,
+      );
     };
   }
   return (input: BlobLike) =>
