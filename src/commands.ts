@@ -31,6 +31,7 @@ import { delegate } from "@ucanto/core";
 import { CID } from "multiformats/basics";
 import { base64 } from "multiformats/bases/base64";
 import { identity } from "multiformats/hashes/identity";
+import { startLocalKms } from "./kms/local.js";
 
 // --- Per-workspace sync state (returned by startWorkspaceSync) ---
 
@@ -121,6 +122,9 @@ export async function startWorkspaceSync(
   const deviceConfig = await loadDeviceConfig(workspace);
   if (!deviceConfig || !deviceConfig.setupComplete) {
     return null;
+  }
+  if (deviceConfig.kmsProvider === "1password") {
+    await startLocalKms();
   }
   const engine = await SyncEngine.fromConfig(workspace, deviceConfig);
   await engine.start();
