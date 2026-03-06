@@ -70,6 +70,7 @@ export async function processChanges(
   for (const relPath of toEncode) {
     try {
       const fileBytes = await fs.readFile(path.join(workspace, relPath));
+      if (fileBytes.length === 0) continue; // Skip empty files
       const existing = current
         ? await Revision.get(blocks, current, relPath)
         : null;
@@ -104,6 +105,7 @@ export async function processChanges(
       path.join(workspace, change.path),
       "utf-8",
     );
+    if (content.length === 0) continue; // Skip empty files
     const block = current
       ? await mdsync.put(blocks, contentFetcher, current, change.path, content)
       : await mdsync.v0Put(content);
