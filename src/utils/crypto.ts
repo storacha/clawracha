@@ -65,7 +65,17 @@ export function getKMSCryptoAdapter(endpoint?: KmsEndpoint): CryptoAdapter {
   const key = `${url}|${did}`;
   let adapter = adapterCache.get(key);
   if (!adapter) {
-    adapter = createGenericKMSAdapter(url, did);
+    const isLocal = (() => {
+      try {
+        const { hostname } = new URL(url);
+        return hostname === "localhost" || hostname === "127.0.0.1";
+      } catch {
+        return false;
+      }
+    })();
+    adapter = isLocal
+      ? createGenericKMSAdapter(url, did, { allowInsecureHttp: true })
+      : createGenericKMSAdapter(url, did);
     adapterCache.set(key, adapter);
   }
   return adapter;
