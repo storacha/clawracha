@@ -54,10 +54,11 @@ This will:
 1. Ask for your Storacha email (sends a confirmation link)
 2. Wait for email confirmation and payment plan verification
 3. Ask you to choose **Public** or **Private (encrypted)** access
-4. Create a new Storacha Space
-5. Generate delegations (upload, name, plan)
-6. Do an initial sync of existing workspace files
-7. Start watching for changes
+4. If encrypted, choose **Storacha Cloud** or **1Password** key management
+5. Create a new Storacha Space
+6. Generate delegations (upload, name, plan)
+7. Do an initial sync of existing workspace files
+8. Start watching for changes
 
 ### 4. Add Another Device
 
@@ -160,15 +161,34 @@ In your OpenClaw plugin config:
 During setup, you choose the access type:
 
 - **Public** — Files are stored as plaintext on IPFS/Filecoin. Anyone with the CID can access them.
-- **Private (encrypted)** — Files are encrypted via Storacha's KMS before upload. Only devices with the proper delegations can decrypt.
+- **Private (encrypted)** — Files are encrypted before upload. Only devices with the proper delegations can decrypt.
 
-Private spaces use `@storacha/encrypt-upload-client` with Google KMS for key management. The plan delegation grants KMS access, and decrypt delegations are scoped per-CID with 15-minute expiry.
+When you choose encrypted, you pick a **key management provider**:
+
+### Storacha Cloud (Google KMS)
+
+Uses Storacha's hosted KMS service (`kms.storacha.network`). Keys are managed server-side in Google Cloud KMS. **Requires a paid Storacha plan.** The space is marked as `private` in Storacha, and the plan delegation grants KMS access.
+
+### 1Password (Local)
+
+Uses a local KMS server backed by the 1Password desktop app. Keys are stored as items in your 1Password vault — never leaving your machine. **No paid plan required.** The space is `public` from Storacha's perspective (Storacha doesn't know about the encryption), but clawracha encrypts everything locally before upload.
+
+During setup you provide:
+- **1Password account name** — which 1Password account to use
+- **Vault name** — where to store keys (default: "Storacha Space Keys")
+
+The vault is created automatically if it doesn't exist. Multiple spaces can share a vault.
+
+#### Security Model
+
+The 1Password SDK runs in a **separate process** — a bundled ucan-kms server that clawracha forks on startup. Private key material never enters the plugin's address space. See the [Architecture Guide](docs/architecture.md#process-isolation-security-model) for details on why this matters.
 
 ## Requirements
 
 - Node.js ≥ 20
 - OpenClaw ≥ 2026.0.0
-- A [Storacha account](https://console.storacha.network) with an active payment plan
+- A [Storacha account](https://console.storacha.network) (paid plan required for Storacha Cloud encryption)
+- [1Password desktop app](https://1password.com/downloads) (only if using 1Password encryption)
 
 ## Docs
 

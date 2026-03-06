@@ -212,12 +212,12 @@ Clawracha uses three UCAN delegations, all stored in `DeviceConfig`:
 1. Re-delegate upload: Agent → Target DID
 2. Re-delegate name: `name.grant(targetDID)`
 3. Re-delegate plan: Agent → Target DID (chained from existing)
-4. Pack all three + `access` config into a delegation bundle (single CAR)
+4. Pack all three + access/KMS config into a delegation bundle (single CAR)
 
 **Join (on new device):**
 1. Parse delegation bundle
 2. Extract and store all three delegations
-3. Set `access` from bundle (so device knows if space is encrypted)
+3. Set `storachaAccess`, `kmsProvider`, `kmsLocation`, `kmsKeyring` from bundle
 4. Pull remote state
 5. Start watching
 
@@ -227,10 +227,13 @@ The delegation bundle is a single CAR file with one root block (DAG-CBOR):
 
 ```typescript
 {
-  upload: Uint8Array,  // Upload delegation archive
-  name: Uint8Array,    // Name delegation archive  
-  plan: Uint8Array,    // Plan delegation archive
-  access?: SpaceAccess // Space access config (public/private)
+  upload: Uint8Array,       // Upload delegation archive
+  name: Uint8Array,         // Name delegation archive
+  plan: Uint8Array,         // Plan delegation archive
+  access?: SpaceAccess,     // What Storacha sees (public/private)
+  kmsProvider?: string,     // "google" | "1password"
+  kmsLocation?: string,     // 1Password account name
+  kmsKeyring?: string,      // 1Password vault name
 }
 ```
 
@@ -241,13 +244,20 @@ When passed as a CLI argument, bundles are encoded as CIDv1 with:
 
 This matches the Storacha CLI's delegation format.
 
-## Encryption (Private Spaces)
+## Encryption
 
-For private spaces, all content is encrypted before upload. The encryption/decryption logic is abstracted behind two interfaces — `Encoder` and `ContentFetcher` — so the sync engine and handlers are agnostic to access type.
+For encrypted spaces (any `kmsProvider` set), all content is encrypted before upload. The encryption/decryption logic is abstracted behind two interfaces — `Encoder` and `ContentFetcher` — so the sync engine and handlers are agnostic to whether or how encryption is applied.
+
+### Endpoint Resolution
+
+`resolveCryptoConfig()` resolves the KMS endpoint once based on `kmsProvider`, and returns it in `CryptoConfig` alongside the encryption/decryption configs. Both `makeEncoder` and `makeContentFetcher` pull the endpoint from there — no threading through intermediate layers.
+
+- **Google:** hardcoded URL + DID
+- **1Password:** URL is `localhost:8787`, DID discovered via `GET /` on the local server
 
 ### Encoder and ContentFetcher
 
-Both are created at `SyncEngine.fromConfig()` time based on the space's access config:
+Both are created at `SyncEngine.fromConfig()` time based on the `CryptoConfig` (null for unencrypted spaces):
 
 - **`makeEncoder(cryptoConfig)`** (`utils/encoder.ts`):
   - Public: wraps `createFileEncoderStream` (UnixFS encoding)
@@ -276,11 +286,49 @@ Both are created at `SyncEngine.fromConfig()` time based on the space's access c
    - Drains the decrypted stream to bytes
 3. Used by both `applyRemoteChanges` (regular files) and `mdsync` (markdown entries) via the same interface
 
-### KMS Details
+### KMS Providers
+
+Clawracha supports two KMS backends, selected during setup via `kmsProvider` in DeviceConfig:
+
+#### Google KMS (`kmsProvider: "google"`)
 
 - **Service:** `https://ucan-kms-production.protocol-labs.workers.dev`
 - **DID:** `did:key:z6MksQJobJmBfPhjHWgFXVppqM6Fcjc1k7xu4z6xvusVrtKv`
 - Plan delegation is re-delegated to the KMS service DID so it can verify account access
+- Storacha sees the space as `private` — server-side key setup via `space/encryption/setup`
+- Requires a paid Storacha plan
+
+#### 1Password (`kmsProvider: "1password"`)
+
+- **Service:** `http://127.0.0.1:8787` (local, forked by the plugin)
+- **DID:** Discovered at startup via `GET /` on the local server
+- RSA keys stored as SshKey items in 1Password vaults
+- Storacha sees the space as `public` — encryption is entirely client-side
+- No paid plan required
+
+The local KMS server is a bundled artifact (`vendor/local-server.mjs`) built from the [ucan-kms](https://github.com/storacha/ucan-kms) repo. Clawracha forks it as a child process via `startLocalKms()` when any workspace uses the 1Password provider. The server is shared across all workspaces — one process serves all 1Password-backed spaces.
+
+##### UCAN Caveats for 1Password
+
+The `space/encryption/setup` capability carries two optional caveats:
+- `nb.location` — maps to the **1Password account name**
+- `nb.keyring` — maps to the **1Password vault name** (default: "Storacha Space Keys")
+
+The `space/encryption/key/decrypt` capability does **not** carry these caveats. Instead, the local KMS server persists a `space DID → { location, vaultId }` mapping on disk when setup is called, and looks it up on decrypt. This mapping is stored at `~/.ucan-kms/space-key-mappings.json`.
+
+##### Process Isolation Security Model
+
+The 1Password SDK and all private key material live exclusively in the forked KMS process, not in the plugin's address space. This is a deliberate security boundary:
+
+- All OpenClaw plugins currently share a single Node.js process — plugin memory is not isolated
+- By running the KMS as a separate process, key material never enters the shared plugin memory
+- Communication is via UCAN invocations over HTTP — the same protocol used by the cloud KMS
+- A compromised plugin cannot inspect the KMS process's memory to extract 1Password credentials or decrypted keys
+- The local server binds to `127.0.0.1` only — not accessible from the network
+
+##### Per-Invocation Client Instantiation
+
+Different spaces can use different 1Password accounts. The local KMS server lazily creates SDK client instances per account name (from the `location` caveat). A client pool (`Map<accountName, Client>`) caches instances for the server's lifetime.
 
 ## CAR Streaming
 
@@ -314,16 +362,21 @@ Stored at `<workspace>/.storacha/config.json`:
 
 ```typescript
 interface DeviceConfig {
-  agentKey: string;           // Ed25519 private key (base64)
-  nameArchive?: string;       // UCN name state (base64 CID)
-  uploadDelegation?: string;  // Space access delegation (base64 CID)
-  nameDelegation?: string;    // Name delegation (base64 CID)
-  planDelegation?: string;    // Plan/KMS delegation (base64 CID)
-  spaceDID?: string;          // Space DID (did:key:...)
-  access?: SpaceAccess;       // { type: "public" } | { type: "private", encryption: {...} }
-  setupComplete?: boolean;    // Gate for watcher startup
+  agentKey: string;              // Ed25519 private key (base64)
+  nameArchive?: string;          // UCN name state (base64 CID)
+  uploadDelegation?: string;     // Space access delegation (base64 CID)
+  nameDelegation?: string;       // Name delegation (base64 CID)
+  planDelegation?: string;       // Plan/KMS delegation (base64 CID)
+  spaceDID?: string;             // Space DID (did:key:...)
+  storachaAccess?: SpaceAccess;  // What Storacha sees: "public" or "private"
+  kmsProvider?: string;          // "google" | "1password" — drives encryption
+  kmsLocation?: string;          // 1Password account name (1password only)
+  kmsKeyring?: string;           // 1Password vault name (1password only)
+  setupComplete?: boolean;       // Gate for watcher startup
 }
 ```
+
+Note: `storachaAccess` reflects what Storacha knows about the space. `kmsProvider` independently determines whether clawracha encrypts content. A 1Password space has `storachaAccess: "public"` (Storacha stores it as plaintext from its perspective) but `kmsProvider: "1password"` (clawracha encrypts locally).
 
 The `nameArchive` is updated after every sync — it captures the full UCN name state so the device can resume without re-resolving from scratch.
 

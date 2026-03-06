@@ -51,22 +51,31 @@ openclaw clawracha join mAXASI...longbase64... --agent myagent  # base64 CID str
 
 ## Space Access Types
 
-### Public
+### Public (unencrypted)
 - Files stored as plaintext on IPFS/Filecoin
 - Anyone with the CID can fetch the content
 - No KMS interaction needed
 - Faster (no encrypt/decrypt overhead)
 
-### Private (encrypted)
+### Encrypted — Storacha Cloud (Google KMS)
 - All content encrypted before upload via `@storacha/encrypt-upload-client`
-- For now uses Google KMS for key management -- Lit Protocol and self custody coming soon
+- Keys managed server-side by Storacha's hosted KMS (`kms.storacha.network`)
+- Storacha sees the space as `private` — server-side key setup via `space/encryption/setup`
 - Requires `planDelegation` for KMS access
 - Decrypt delegations are scoped per-CID with 15-minute expiry
-- Requires a paid Storacha plan
+- **Requires a paid Storacha plan**
 
-You choose the access type during `setup`. When using `grant`/`join`, the access config is included in the delegation bundle automatically — the joining device inherits the same access type.
+### Encrypted — 1Password (Local)
+- All content encrypted before upload, same client library
+- Keys stored in 1Password vaults as SshKey items
+- Storacha sees the space as `public` — encryption is entirely client-side
+- Local KMS server (`vendor/local-server.mjs`) forked as a child process
+- 1Password account name + vault name provided during setup
+- Vault created automatically if it doesn't exist
+- **No paid plan required** — works with free Storacha accounts
+- See [Architecture Guide](architecture.md#process-isolation-security-model) for the security model
 
-Private spaces will be available to to free accounts via self-custody
+You choose the access type and KMS provider during `setup`. When using `grant`/`join`, the full config (access type, KMS provider, location, keyring) is included in the delegation bundle automatically — the joining device inherits the same encryption setup.
 
 ## Markdown CRDT Merge
 
