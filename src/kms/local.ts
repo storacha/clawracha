@@ -9,7 +9,7 @@ import { dirname, resolve } from "node:path";
 
 const LOCAL_SERVER_SCRIPT = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../vendor/local-server.mjs",
+  "../../vendor/local-server.cjs",
 );
 const LOCAL_KMS_URL = "http://127.0.0.1:8787";
 const STARTUP_TIMEOUT_MS = 10_000;
