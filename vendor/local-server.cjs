@@ -2614,7 +2614,7 @@ var import_node_path = require("node:path");
 var import_node_http = require("node:http");
 var import_sdk = __toESM(require_sdk(), 1);
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/ed25519.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/ed25519.js
 var ed25519_exports = {};
 __export(ed25519_exports, {
   PUB_KEY_OFFSET: () => PUB_KEY_OFFSET,
@@ -2634,7 +2634,7 @@ __export(ed25519_exports, {
   signatureCode: () => signatureCode2
 });
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/ed25519/signer.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/ed25519/signer.js
 var signer_exports = {};
 __export(signer_exports, {
   PUB_KEY_OFFSET: () => PUB_KEY_OFFSET,
@@ -4337,7 +4337,7 @@ var Hasher = class {
   }
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/ed25519/verifier.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/ed25519/verifier.js
 var verifier_exports = {};
 __export(verifier_exports, {
   code: () => code,
@@ -4655,7 +4655,7 @@ var toJSON = (signature) => ({
   "/": { bytes: base64.baseEncode(signature) }
 });
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/verifier.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/verifier.js
 var parseWith = (did2, parsers) => {
   if (did2.startsWith("did:")) {
     for (const parser of parsers) {
@@ -4724,7 +4724,7 @@ var VerifierWithDID = class {
   }
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/ed25519/verifier.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/ed25519/verifier.js
 var code = 237;
 var name = "Ed25519";
 var signatureCode = EdDSA;
@@ -4805,7 +4805,7 @@ var Ed25519Verifier = class extends Uint8Array {
 };
 var or3 = (other) => or2({ parse: parse2 }, other);
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/signer.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/signer.js
 var or4 = (left, right) => new Importer([left, right]);
 var Importer = class _Importer {
   /**
@@ -4926,7 +4926,7 @@ var SignerWithDID = class {
   }
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/ed25519/signer.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/ed25519/signer.js
 var code2 = 4864;
 var name2 = name;
 var signatureAlgorithm2 = signatureAlgorithm;
@@ -5072,7 +5072,7 @@ var Ed25519Signer = class extends Uint8Array {
   }
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa.js
 var rsa_exports = {};
 __export(rsa_exports, {
   Verifier: () => RSAVerifier,
@@ -5090,7 +5090,7 @@ __export(rsa_exports, {
 var import_crypto = __toESM(require("crypto"), 1);
 var webcrypto = import_crypto.default.webcrypto;
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/multiformat.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/multiformat.js
 var tagWith = (code11, bytes2) => {
   const offset = varint_exports.encodingLength(code11);
   const multiformat = new Uint8Array(bytes2.byteLength + offset);
@@ -5115,7 +5115,7 @@ var encodingLength2 = varint_exports.encodingLength;
 var encodeTo2 = varint_exports.encodeTo;
 var decode10 = varint_exports.decode;
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa/asn1.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa/asn1.js
 var TAG_SIZE = 1;
 var INT_TAG = 2;
 var BITSTRING_TAG = 3;
@@ -5282,7 +5282,7 @@ var readSequenceWith = (readers, source, byteOffset = 0) => {
   return results;
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa/spki.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa/spki.js
 var SPKI_PARAMS_ENCODED = new Uint8Array([
   48,
   13,
@@ -5307,7 +5307,7 @@ var decode11 = (info2) => {
   return readBitString(info2, keyOffset);
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa/pkcs8.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa/pkcs8.js
 var PKSC8_HEADER = new Uint8Array([
   // version
   2,
@@ -5339,10 +5339,10 @@ var decode12 = (info2) => {
 };
 var encode9 = (key) => encodeSequence([PKSC8_HEADER, encodeOctetString(key)]);
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa/public-key.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa/public-key.js
 var encode10 = ({ n, e }) => encodeSequence([encodeInt(n), encodeInt(e)]);
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa/private-key.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa/private-key.js
 var VERSION = new Uint8Array();
 var decode13 = (source, byteOffset = 0) => {
   const [v, n, e, d, p, q, dp, dq, qi] = readSequenceWith(
@@ -5363,7 +5363,7 @@ var decode13 = (source, byteOffset = 0) => {
   return { v, n, e, d, p, q, dp, dq, qi };
 };
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/rsa.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/rsa.js
 var name3 = "RSA";
 var code3 = 4869;
 var verifierCode = 4613;
@@ -7023,15 +7023,15 @@ var typeEncoders = {
       return simpleTokens.emptyArray;
     }
     refStack = Ref.createCheck(refStack, obj);
-    const entries2 = [];
+    const entries3 = [];
     let i = 0;
     for (const e of obj) {
-      entries2[i++] = objectToTokens(e, options, refStack);
+      entries3[i++] = objectToTokens(e, options, refStack);
     }
     if (options.addBreakTokens) {
-      return [new Token(Type.array, obj.length), entries2, new Token(Type.break)];
+      return [new Token(Type.array, obj.length), entries3, new Token(Type.break)];
     }
-    return [new Token(Type.array, obj.length), entries2];
+    return [new Token(Type.array, obj.length), entries3];
   },
   /**
    * @param {any} obj
@@ -7051,19 +7051,19 @@ var typeEncoders = {
       return simpleTokens.emptyMap;
     }
     refStack = Ref.createCheck(refStack, obj);
-    const entries2 = [];
+    const entries3 = [];
     let i = 0;
     for (const key of keys) {
-      entries2[i++] = [
+      entries3[i++] = [
         objectToTokens(key, options, refStack),
         objectToTokens(isMap ? obj.get(key) : obj[key], options, refStack)
       ];
     }
-    sortMapEntries(entries2, options);
+    sortMapEntries(entries3, options);
     if (options.addBreakTokens) {
-      return [new Token(Type.map, length2), entries2, new Token(Type.break)];
+      return [new Token(Type.map, length2), entries3, new Token(Type.break)];
     }
-    return [new Token(Type.map, length2), entries2];
+    return [new Token(Type.map, length2), entries3];
   }
 };
 typeEncoders.Map = typeEncoders.Object;
@@ -7087,9 +7087,9 @@ function objectToTokens(obj, options = {}, refStack) {
   }
   return typeEncoder(obj, typ, options, refStack);
 }
-function sortMapEntries(entries2, options) {
+function sortMapEntries(entries3, options) {
   if (options.mapSorter) {
-    entries2.sort(options.mapSorter);
+    entries3.sort(options.mapSorter);
   }
 }
 function mapSorter(e1, e2) {
@@ -8610,7 +8610,7 @@ var isExpired = (ucan) => ucan.expiration <= now();
 var isTooEarly = (ucan) => ucan.notBefore != null && now() <= ucan.notBefore;
 var now = () => Math.floor(Date.now() / 1e3);
 
-// node_modules/.pnpm/@ucanto+principal@9.0.2/node_modules/@ucanto/principal/src/lib.js
+// node_modules/.pnpm/@ucanto+principal@9.0.3/node_modules/@ucanto/principal/src/lib.js
 var Verifier = verifier_exports.or(RSAVerifier);
 var Signer = or5(rsa_exports);
 
@@ -8871,7 +8871,7 @@ var AuditLogService = class {
    * @param {string} [invocationCid] - UCAN invocation CID
    * @param {number} [duration] - Total operation duration
    */
-  logInvocation(space2, capability2, success, error4 = void 0, invocationCid = void 0, duration = void 0) {
+  logInvocation(space2, capability3, success, error4 = void 0, invocationCid = void 0, duration = void 0) {
     const eventType = success ? SecurityEventType.INVOCATION_SUCCESS : SecurityEventType.INVOCATION_FAILURE;
     this.logSecurityEvent(eventType, {
       space: space2,
@@ -8880,7 +8880,7 @@ var AuditLogService = class {
       error: error4,
       invocationCid,
       duration,
-      metadata: { capability: capability2 }
+      metadata: { capability: capability3 }
     });
   }
   /**
@@ -8948,7 +8948,7 @@ var AuditLogService = class {
   }
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/cbor.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/cbor.js
 var cbor_exports2 = {};
 __export(cbor_exports2, {
   code: () => code4,
@@ -9026,7 +9026,7 @@ var write2 = async (data, options) => {
   return { cid, bytes: bytes2 };
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/dag.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/dag.js
 var iterate = function* (value) {
   if (value && typeof value === "object" && "iterateIPLDBlocks" in value && typeof value.iterateIPLDBlocks === "function") {
     yield* value.iterateIPLDBlocks();
@@ -9090,7 +9090,7 @@ var addEveryInto = (source, store2) => {
   }
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/car.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/car.js
 var car_exports = {};
 __export(car_exports, {
   code: () => code9,
@@ -9268,11 +9268,11 @@ var Types = {
       if (Kinds.Map(obj) === void 0) {
         return void 0;
       }
-      const entries2 = Object.entries(obj);
+      const entries3 = Object.entries(obj);
       let ret = obj;
       let requiredCount = 1;
-      for (let i = 0; i < entries2.length; i++) {
-        const [key, value] = entries2[i];
+      for (let i = 0; i < entries3.length; i++) {
+        const [key, value] = entries3[i];
         switch (key) {
           case "roots":
             {
@@ -9284,7 +9284,7 @@ var Types = {
                 if (ret === obj) {
                   ret = {};
                   for (let j = 0; j < i; j++) {
-                    ret[entries2[j][0]] = entries2[j][1];
+                    ret[entries3[j][0]] = entries3[j][1];
                   }
                 }
                 ret.roots = v;
@@ -9302,7 +9302,7 @@ var Types = {
                 if (ret === obj) {
                   ret = {};
                   for (let j = 0; j < i; j++) {
-                    ret[entries2[j][0]] = entries2[j][1];
+                    ret[entries3[j][0]] = entries3[j][1];
                   }
                 }
                 ret.version = v;
@@ -9363,11 +9363,11 @@ var Reprs = {
       if (Kinds.Map(obj) === void 0) {
         return void 0;
       }
-      const entries2 = Object.entries(obj);
+      const entries3 = Object.entries(obj);
       let ret = obj;
       let requiredCount = 1;
-      for (let i = 0; i < entries2.length; i++) {
-        const [key, value] = entries2[i];
+      for (let i = 0; i < entries3.length; i++) {
+        const [key, value] = entries3[i];
         switch (key) {
           case "roots":
             {
@@ -9379,7 +9379,7 @@ var Reprs = {
                 if (ret === obj) {
                   ret = {};
                   for (let j = 0; j < i; j++) {
-                    ret[entries2[j][0]] = entries2[j][1];
+                    ret[entries3[j][0]] = entries3[j][1];
                   }
                 }
                 ret.roots = v;
@@ -9397,7 +9397,7 @@ var Reprs = {
                 if (ret === obj) {
                   ret = {};
                   for (let j = 0; j < i; j++) {
-                    ret[entries2[j][0]] = entries2[j][1];
+                    ret[entries3[j][0]] = entries3[j][1];
                   }
                 }
                 ret.version = v;
@@ -9858,7 +9858,7 @@ var createWriter = (buffer2, options = {}) => {
   return writer;
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/car.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/car.js
 var contentType2 = "application/vnd.ipld.car";
 var name7 = "CAR";
 var code9 = 514;
@@ -9963,7 +9963,7 @@ var write3 = async (data, options) => {
   return { bytes: bytes2, cid };
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema.js
 var schema_exports3 = {};
 __export(schema_exports3, {
   API: () => API,
@@ -10013,7 +10013,7 @@ __export(schema_exports3, {
   variant: () => variant
 });
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/uri.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/uri.js
 var uri_exports = {};
 __export(uri_exports, {
   from: () => from8,
@@ -10022,7 +10022,7 @@ __export(uri_exports, {
   uri: () => uri
 });
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/result.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/result.js
 var ok = (value) => {
   if (value == null) {
     throw new TypeError(`ok(${value}) is not allowed, consider ok({}) instead`);
@@ -10056,7 +10056,7 @@ var Failure = class extends Error {
   }
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/schema.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/schema.js
 var API = class {
   /**
    * @param {Settings} settings
@@ -10878,11 +10878,11 @@ var Struct = class _Struct extends API {
       /** @type {{[K in keyof U]: Schema.Infer<U[K]>}} */
       {}
     );
-    const entries2 = (
+    const entries3 = (
       /** @type {{[K in keyof U]: [K & string, U[K]]}[keyof U][]} */
       Object.entries(shape)
     );
-    for (const [at, reader] of entries2) {
+    for (const [at, reader] of entries3) {
       const result = reader.read(source[at]);
       if (result.error) {
         return memberError({ at, cause: result.error });
@@ -10934,8 +10934,8 @@ var struct = (fields) => {
     /** @type {{[K in keyof U]: Schema.Reader<unknown, unknown>}} */
     {}
   );
-  const entries2 = Object.entries(fields);
-  for (const [key, field] of entries2) {
+  const entries3 = Object.entries(fields);
+  for (const [key, field] of entries3) {
     switch (typeof field) {
       case "number":
       case "string":
@@ -11180,11 +11180,11 @@ var IntersectionError = class extends SchemaError {
     ].join("\n");
   }
 };
-var indent = (message, indent3 = "  ") => `${indent3}${message.split("\n").join(`
-${indent3}`)}`;
+var indent = (message, indent4 = "  ") => `${indent4}${message.split("\n").join(`
+${indent4}`)}`;
 var li = (message) => indent(`- ${message}`);
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/uri.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/uri.js
 var URISchema = class extends API {
   /**
    * @param {unknown} input
@@ -11221,7 +11221,7 @@ var from8 = (input) => (
   schema.from(input)
 );
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/link.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/link.js
 var link_exports2 = {};
 __export(link_exports2, {
   create: () => create4,
@@ -11289,7 +11289,7 @@ var match2 = (options = {}) => new LinkSchema(options);
 var read3 = (input) => schema2.read(input);
 var optional2 = () => schema2.optional();
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/principal.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/principal.js
 var principal_exports = {};
 __export(principal_exports, {
   from: () => from9,
@@ -11333,7 +11333,7 @@ var match3 = (options = {}) => (
 );
 var from9 = (input) => match3({}).from(input);
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/did.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/did.js
 var did_exports2 = {};
 __export(did_exports2, {
   did: () => did,
@@ -11405,7 +11405,7 @@ var matchBytes = (options = {}) => (
 );
 var fromBytes2 = (input) => matchBytes({}).from(input);
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/schema/text.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/schema/text.js
 var text_exports = {};
 __export(text_exports, {
   match: () => match5,
@@ -11432,7 +11432,7 @@ var Match = class extends API {
   }
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/delegation.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/delegation.js
 var isDelegation = (proof) => !isLink(proof);
 var Delegation = class {
   /**
@@ -11454,8 +11454,8 @@ var Delegation = class {
   get attachedLinks() {
     const _attachedLinks = /* @__PURE__ */ new Set();
     const ucanView = this.data;
-    for (const capability2 of ucanView.capabilities) {
-      const links = getLinksFromObject(capability2);
+    for (const capability3 of ucanView.capabilities) {
+      const links = getLinksFromObject(capability3);
       for (const link5 of links) {
         _attachedLinks.add(`${link5}`);
       }
@@ -11725,11 +11725,11 @@ var exportSubDAG = function* (root, blocks) {
   yield root;
 };
 var importDAG = (dag) => {
-  let entries2 = [];
+  let entries3 = [];
   for (const block of dag) {
-    entries2.push([block.cid.toString(), block]);
+    entries3.push([block.cid.toString(), block]);
   }
-  const last = entries2.pop();
+  const last = entries3.pop();
   if (!last) {
     throw new RangeError("Empty DAG can not be turned into a delegation");
   } else {
@@ -11737,7 +11737,7 @@ var importDAG = (dag) => {
     return new Delegation(
       /** @type {API.UCANBlock<C>} */
       root,
-      new Map(entries2)
+      new Map(entries3)
     );
   }
 };
@@ -11778,7 +11778,7 @@ function getLinksFromObject(obj) {
   return links;
 }
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/invocation.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/invocation.js
 var invocation_exports = {};
 __export(invocation_exports, {
   Invocation: () => Invocation,
@@ -11807,24 +11807,25 @@ var IssuedInvocation = class {
   constructor({
     issuer,
     audience,
-    capability: capability2,
+    capability: capability3,
     proofs: proofs2 = [],
     expiration,
     lifetimeInSeconds,
     notBefore,
     nonce,
-    facts = []
+    facts = [],
+    attachedBlocks
   }) {
     this.issuer = issuer;
     this.audience = audience;
     this.proofs = proofs2;
-    this.capabilities = [capability2];
+    this.capabilities = [capability3];
     this.expiration = expiration;
     this.lifetimeInSeconds = lifetimeInSeconds;
     this.notBefore = notBefore;
     this.nonce = nonce;
     this.facts = facts;
-    this.attachedBlocks = /* @__PURE__ */ new Map();
+    this.attachedBlocks = attachedBlocks || /* @__PURE__ */ new Map();
   }
   /**
    * @param {API.Block} block
@@ -11852,7 +11853,7 @@ var IssuedInvocation = class {
 var Invocation = class extends Delegation {
 };
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/message.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/message.js
 var message_exports = {};
 __export(message_exports, {
   MessageSchema: () => MessageSchema,
@@ -11860,7 +11861,7 @@ __export(message_exports, {
   view: () => view5
 });
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/receipt.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/receipt.js
 var receipt_exports = {};
 __export(receipt_exports, {
   issue: () => issue2,
@@ -12079,7 +12080,7 @@ var ReceptBuilder = class {
 var NOFX = Object.freeze({ fork: Object.freeze([]) });
 var issue2 = (options) => new ReceptBuilder(options).buildIPLDView();
 
-// node_modules/.pnpm/@ucanto+core@10.4.0/node_modules/@ucanto/core/src/message.js
+// node_modules/.pnpm/@ucanto+core@10.4.5/node_modules/@ucanto/core/src/message.js
 var MessageSchema = variant({
   "ucanto/message@7.0.0": struct({
     execute: match2().array().optional(),
@@ -12436,10 +12437,10 @@ var MalformedCapability = class extends Failure {
    * @param {API.Capability} capability
    * @param {API.Failure} cause
    */
-  constructor(capability2, cause) {
+  constructor(capability3, cause) {
     super();
     this.name = the("MalformedCapability");
-    this.capability = capability2;
+    this.capability = capability3;
     this.cause = cause;
   }
   describe() {
@@ -12455,10 +12456,10 @@ var UnknownCapability = class extends Failure {
   /**
    * @param {API.Capability} capability
    */
-  constructor(capability2) {
+  constructor(capability3) {
     super();
     this.name = the("UnknownCapability");
-    this.capability = capability2;
+    this.capability = capability3;
   }
   /* c8 ignore next 3 */
   describe() {
@@ -12530,7 +12531,7 @@ var Unauthorized = class extends Failure {
    * }} cause
    */
   constructor({
-    capability: capability2,
+    capability: capability3,
     delegationErrors,
     unknownCapabilities,
     invalidProofs,
@@ -12539,7 +12540,7 @@ var Unauthorized = class extends Failure {
     super();
     this.name = /** @type {const} */
     "Unauthorized";
-    this.capability = capability2;
+    this.capability = capability3;
     this.delegationErrors = delegationErrors;
     this.unknownCapabilities = unknownCapabilities;
     this.invalidProofs = invalidProofs;
@@ -12560,8 +12561,8 @@ ${unknown2.join("\n")}`)] : []
     ].join("\n");
   }
 };
-var format8 = (capability2, space2) => JSON.stringify(
-  capability2,
+var format8 = (capability3, space2) => JSON.stringify(
+  capability3,
   (_key, value) => {
     if (isLink(value)) {
       return value.toString();
@@ -12571,8 +12572,8 @@ var format8 = (capability2, space2) => JSON.stringify(
   },
   space2
 );
-var indent2 = (message, indent3 = "  ") => `${indent3}${message.split("\n").join(`
-${indent3}`)}`;
+var indent2 = (message, indent4 = "  ") => `${indent4}${message.split("\n").join(`
+${indent4}`)}`;
 var li2 = (message) => indent2(`- ${message}`);
 
 // node_modules/.pnpm/@ucanto+validator@9.1.0/node_modules/@ucanto/validator/src/capability.js
@@ -12759,10 +12760,10 @@ var Or = class extends Unit {
    * @param {API.Source} capability
    * @return {API.MatchResult<M|W>}
    */
-  match(capability2) {
-    const left = this.left.match(capability2);
+  match(capability3) {
+    const left = this.left.match(capability3);
     if (left.error) {
-      const right = this.right.match(capability2);
+      const right = this.right.match(capability3);
       if (right.error) {
         return right.error.name === "MalformedCapability" ? (
           //
@@ -12794,10 +12795,10 @@ var And = class _And extends View2 {
    * @param {API.Source} capability
    * @returns {API.MatchResult<API.Amplify<API.InferMembers<Selectors>>>}
    */
-  match(capability2) {
+  match(capability3) {
     const group = [];
     for (const selector of this.selectors) {
-      const result = selector.match(capability2);
+      const result = selector.match(capability3);
       if (result.error) {
         return result;
       } else {
@@ -12867,8 +12868,8 @@ var Derive = class extends Unit {
    * @param {API.Source} capability
    * @returns {API.MatchResult<API.DerivedMatch<T, M>>}
    */
-  match(capability2) {
-    const match6 = this.to.match(capability2);
+  match(capability3) {
+    const match6 = this.to.match(capability3);
     if (match6.error) {
       return match6;
     } else {
@@ -12919,8 +12920,8 @@ var Match2 = class _Match {
     const unknown2 = [];
     const errors = [];
     const matches = [];
-    for (const capability2 of capabilities) {
-      const result = resolveCapability(this.descriptor, this.value, capability2);
+    for (const capability3 of capabilities) {
+      const result = resolveCapability(this.descriptor, this.value, capability3);
       if (result.ok) {
         const claim2 = this.descriptor.derives(this.value, result.ok);
         if (claim2.error) {
@@ -12931,7 +12932,7 @@ var Match2 = class _Match {
             )
           );
         } else {
-          matches.push(new _Match(capability2, result.ok, this.descriptor));
+          matches.push(new _Match(capability3, result.ok, this.descriptor));
         }
       } else {
         switch (result.error.name) {
@@ -13119,43 +13120,43 @@ var resolveResource = (source, uri2, fallback) => {
 };
 var parseCapability = (descriptor, source) => {
   const { delegation } = source;
-  const capability2 = (
+  const capability3 = (
     /** @type {API.Capability<A, R, C>} */
     source.capability
   );
-  if (descriptor.can !== capability2.can) {
-    return { error: new UnknownCapability(capability2) };
+  if (descriptor.can !== capability3.can) {
+    return { error: new UnknownCapability(capability3) };
   }
-  const uri2 = descriptor.with.read(capability2.with);
+  const uri2 = descriptor.with.read(capability3.with);
   if (uri2.error) {
-    return { error: new MalformedCapability(capability2, uri2.error) };
+    return { error: new MalformedCapability(capability3, uri2.error) };
   }
-  const nb = descriptor.nb.read(capability2.nb || {});
+  const nb = descriptor.nb.read(capability3.nb || {});
   if (nb.error) {
-    return { error: new MalformedCapability(capability2, nb.error) };
+    return { error: new MalformedCapability(capability3, nb.error) };
   }
   return { ok: new CapabilityView(descriptor.can, uri2.ok, nb.ok, delegation) };
 };
-var resolveCapability = (descriptor, claimed, { capability: capability2, delegation }) => {
-  const can = resolveAbility(capability2.can, claimed.can, null);
+var resolveCapability = (descriptor, claimed, { capability: capability3, delegation }) => {
+  const can = resolveAbility(capability3.can, claimed.can, null);
   if (can == null) {
-    return { error: new UnknownCapability(capability2) };
+    return { error: new UnknownCapability(capability3) };
   }
   const resource = resolveResource(
-    capability2.with,
+    capability3.with,
     claimed.with,
-    capability2.with
+    capability3.with
   );
   const uri2 = descriptor.with.read(resource);
   if (uri2.error) {
-    return { error: new MalformedCapability(capability2, uri2.error) };
+    return { error: new MalformedCapability(capability3, uri2.error) };
   }
   const nb = descriptor.nb.read({
     ...claimed.nb,
-    ...capability2.nb
+    ...capability3.nb
   });
   if (nb.error) {
-    return { error: new MalformedCapability(capability2, nb.error) };
+    return { error: new MalformedCapability(capability3, nb.error) };
   }
   return { ok: new CapabilityView(can, uri2.ok, nb.ok, delegation) };
 };
@@ -13177,8 +13178,8 @@ var select = (matcher, capabilities) => {
   const unknown2 = [];
   const matches = [];
   const errors = [];
-  for (const capability2 of capabilities) {
-    const result = matcher.match(capability2);
+  for (const capability3 of capabilities) {
+    const result = matcher.match(capability3);
     if (result.error) {
       switch (result.error.name) {
         case "UnknownCapability":
@@ -13347,11 +13348,11 @@ var resolveSources = async ({ delegation }, config) => {
     if (validation.error) {
       errors.push(new ProofError(proof.cid, validation.error));
     } else {
-      for (const capability2 of proof.capabilities) {
+      for (const capability3 of proof.capabilities) {
         sources.push(
           /** @type {API.Source} */
           {
-            capability: capability2,
+            capability: capability3,
             delegation: proof
           }
         );
@@ -13360,9 +13361,9 @@ var resolveSources = async ({ delegation }, config) => {
   }
   return { sources, errors };
 };
-var isSelfIssued = (capability2, issuer) => capability2.with === issuer;
-var access = async (invocation, { capability: capability2, ...config }) => claim(capability2, [invocation], config);
-var claim = async (capability2, proofs2, {
+var isSelfIssued = (capability3, issuer) => capability3.with === issuer;
+var access = async (invocation, { capability: capability3, ...config }) => claim(capability3, [invocation], config);
+var claim = async (capability3, proofs2, {
   authority,
   principal: principal2,
   validateAuthorization,
@@ -13375,7 +13376,7 @@ var claim = async (capability2, proofs2, {
     canIssue,
     resolve: resolve2,
     principal: principal2,
-    capability: capability2,
+    capability: capability3,
     authority,
     validateAuthorization,
     resolveDIDKey: resolveDIDKey2,
@@ -13388,11 +13389,11 @@ var claim = async (capability2, proofs2, {
   for (const proof of delegations) {
     const validation = await validate(proof, delegations, config);
     if (validation.ok) {
-      for (const capability3 of validation.ok.capabilities.values()) {
+      for (const capability4 of validation.ok.capabilities.values()) {
         sources.push(
           /** @type {API.Source} */
           {
-            capability: capability3,
+            capability: capability4,
             delegation: validation.ok
           }
         );
@@ -13401,7 +13402,7 @@ var claim = async (capability2, proofs2, {
       invalidProofs.push(validation.error);
     }
   }
-  const selection = capability2.select(sources);
+  const selection = capability3.select(sources);
   const { errors: delegationErrors, unknown: unknownCapabilities } = selection;
   const failedProofs = [];
   for (const matched of selection.matches) {
@@ -13431,7 +13432,7 @@ var claim = async (capability2, proofs2, {
   }
   return {
     error: new Unauthorized({
-      capability: capability2,
+      capability: capability3,
       delegationErrors,
       unknownCapabilities,
       invalidProofs,
@@ -13613,10 +13614,10 @@ var HandlerNotFound = class extends RangeError {
   /**
    * @param {API.Capability} capability
    */
-  constructor(capability2) {
+  constructor(capability3) {
     super();
     this.error = true;
-    this.capability = capability2;
+    this.capability = capability3;
   }
   /** @type {'HandlerNotFound'} */
   get name() {
@@ -13643,9 +13644,9 @@ var HandlerExecutionError = class extends Failure {
    * @param {API.Capability} capability
    * @param {Error} cause
    */
-  constructor(capability2, cause) {
+  constructor(capability3, cause) {
     super();
-    this.capability = capability2;
+    this.capability = capability3;
     this.cause = cause;
     this.error = true;
   }
@@ -13701,7 +13702,7 @@ var InvocationCapabilityError = class extends Error {
 };
 
 // node_modules/.pnpm/@ucanto+server@10.2.0/node_modules/@ucanto/server/src/handler.js
-var provideAdvanced = ({ capability: capability2, handler, audience }) => (
+var provideAdvanced = ({ capability: capability3, handler, audience }) => (
   /**
    * @param {API.Invocation<API.Capability<A, R, C>>} invocation
    * @param {API.InvocationContext} options
@@ -13715,7 +13716,7 @@ var provideAdvanced = ({ capability: capability2, handler, audience }) => (
     const authorization = await access(invocation, {
       ...options,
       authority: options.id,
-      capability: capability2
+      capability: capability3
     });
     if (authorization.error) {
       return authorization;
@@ -13952,8 +13953,8 @@ var run = async (invocation, server) => {
       }
     });
   }
-  const [capability2] = invocation.capabilities;
-  const path2 = capability2.can.split("/");
+  const [capability3] = invocation.capabilities;
+  const path2 = capability3.can.split("/");
   const method = (
     /** @type {string} */
     path2.pop()
@@ -13965,7 +13966,7 @@ var run = async (invocation, server) => {
       ran: invocation,
       result: {
         /** @type {API.HandlerNotFound} */
-        error: new HandlerNotFound(capability2)
+        error: new HandlerNotFound(capability3)
       }
     });
   } else {
@@ -13981,7 +13982,7 @@ var run = async (invocation, server) => {
       });
     } catch (cause) {
       const error4 = new HandlerExecutionError(
-        capability2,
+        capability3,
         /** @type {Error} */
         cause
       );
@@ -14061,10 +14062,16 @@ var OnePasswordKMSService = class {
    * @returns {Promise<import('@ucanto/server').Result<EncryptionSetupResult, import('@ucanto/server').Failure>>}
    */
   async setupKeyForSpace(request, _env) {
+    console.log(
+      `[OnePasswordKMS.setupKeyForSpace] Setting up encryption for space ${request.space}...`
+    );
     const startTime = Date.now();
     try {
       const existingMapping = await this.mappings.get(request.space);
       if (existingMapping) {
+        console.log(
+          `[OnePasswordKMS.setupKeyForSpace] Found existing key mapping for space ${request.space}, checking 1Password...`
+        );
         const client2 = await this._getClient(existingMapping.location);
         const existing = await this._findItemForSpace(
           client2,
@@ -14088,6 +14095,9 @@ var OnePasswordKMSService = class {
             provider: PROVIDER
           });
         }
+        console.log(
+          `[OnePasswordKMS.setupKeyForSpace] Key mapping exists but item is missing for space ${request.space}, creating new key...`
+        );
       }
       const location = request.location;
       if (!location) {
@@ -14098,7 +14108,13 @@ var OnePasswordKMSService = class {
         );
       }
       const vaultName = request.keyring || DEFAULT_VAULT_NAME;
+      console.log(
+        `[OnePasswordKMS.setupKeyForSpace] No existing key mapping for space ${request.space}, creating new key in account ${location} vault ${vaultName}...`
+      );
       const client = await this._getClient(location);
+      console.log(
+        `[OnePasswordKMS.setupKeyForSpace] 1Password client ready for account ${location}, resolving vault...`
+      );
       const vaultId = await this._resolveVault(client, vaultName);
       const existingItem = await this._findItemForSpace(
         client,
@@ -14106,6 +14122,9 @@ var OnePasswordKMSService = class {
         vaultId
       );
       if (existingItem) {
+        console.log(
+          `[OnePasswordKMS.setupKeyForSpace] Found existing key item in vault for space ${request.space}, using it...`
+        );
         const publicKey2 = this._extractPublicKey(existingItem);
         if (!publicKey2) {
           throw new Error("Public key not found in 1Password SshKey item");
@@ -14119,11 +14138,17 @@ var OnePasswordKMSService = class {
         );
         return ok2({ publicKey: publicKey2, algorithm: RSA_ALGORITHM, provider: PROVIDER });
       }
+      console.log(
+        `[OnePasswordKMS.setupKeyForSpace] No existing key item found in vault for space ${request.space}, generating new RSA key pair...`
+      );
       const { privateKey } = crypto4.generateKeyPairSync("rsa", {
         modulusLength: RSA_KEY_SIZE,
         privateKeyEncoding: { type: "pkcs8", format: "pem" },
         publicKeyEncoding: { type: "spki", format: "pem" }
       });
+      console.log(
+        `[OnePasswordKMS.setupKeyForSpace] RSA key pair generated for space ${request.space}, storing in 1Password...`
+      );
       const item = await client.items.create({
         title: `storacha-kms:${request.space}`,
         category: (
@@ -14155,6 +14180,13 @@ var OnePasswordKMSService = class {
         RSA_ALGORITHM,
         "1",
         Date.now() - startTime
+      );
+      console.log(
+        `[OnePasswordKMS.setupKeyForSpace] Key setup complete for space ${request.space}, public key stored in 1Password vault ${vaultName} (account ${location})`
+      );
+      console.log(
+        `[OnePasswordKMS.setupKeyForSpace] Public key for space ${request.space}:
+${publicKey}`
       );
       return ok2({ publicKey, algorithm: RSA_ALGORITHM, provider: PROVIDER });
     } catch (err) {
@@ -14199,6 +14231,9 @@ var OnePasswordKMSService = class {
       if (!privateKeyField?.value) {
         return error3(new Failure("Private key not found in 1Password item"));
       }
+      console.log(
+        `[OnePasswordKMS.decryptSymmetricKey] Decrypting symmetric key for space ${request.space} using 1Password-stored RSA private key...`
+      );
       const privateKey = crypto4.createPrivateKey(privateKeyField.value);
       const decrypted = crypto4.privateDecrypt(
         {
@@ -14233,10 +14268,10 @@ var OnePasswordKMSService = class {
    */
   _extractPublicKey(item) {
     const keyField = item.fields.find((f) => f.id === "private_key");
-    if (keyField?.details?.type === "SshKey" && keyField?.details?.content?.publicKey) {
-      return keyField.details.content.publicKey;
-    }
-    return void 0;
+    if (!keyField?.value) return void 0;
+    const privateKeyObj = crypto4.createPrivateKey(keyField.value);
+    const publicKeyObj = crypto4.createPublicKey(privateKeyObj);
+    return publicKeyObj.export({ type: "spki", format: "pem" });
   }
   /**
    * Find the 1Password item for a space by title convention.
@@ -14971,7 +15006,797 @@ async function verifyDelegationChain(proofs2, spaceDID, uploadServiceUrl) {
   }
 }
 
-// node_modules/.pnpm/@storacha+capabilities@1.8.0/node_modules/@storacha/capabilities/dist/utils.js
+// node_modules/.pnpm/@ucanto+validator@10.0.1/node_modules/@ucanto/validator/src/util.js
+var the2 = (value) => value;
+var entries2 = (object) => (
+  /** @type {any} */
+  Object.entries(object)
+);
+var combine2 = ([first, ...rest]) => {
+  const results = first.map((value) => [value]);
+  for (const values of rest) {
+    const tuples = results.splice(0);
+    for (const value of values) {
+      for (const tuple2 of tuples) {
+        results.push([...tuple2, value]);
+      }
+    }
+  }
+  return results;
+};
+var intersection3 = (left, right) => {
+  const [result, other] = left.length < right.length ? [new Set(left), new Set(right)] : [new Set(right), new Set(left)];
+  for (const item of result) {
+    if (!other.has(item)) {
+      result.delete(item);
+    }
+  }
+  return [...result];
+};
+
+// node_modules/.pnpm/@ucanto+validator@10.0.1/node_modules/@ucanto/validator/src/error.js
+var EscalatedCapability2 = class extends Failure {
+  /**
+   * @param {API.ParsedCapability} claimed
+   * @param {object} delegated
+   * @param {API.Failure} cause
+   */
+  constructor(claimed, delegated, cause) {
+    super();
+    this.claimed = claimed;
+    this.delegated = delegated;
+    this.cause = cause;
+    this.name = the2("EscalatedCapability");
+  }
+  describe() {
+    return `Constraint violation: ${this.cause.message}`;
+  }
+};
+var DelegationError2 = class extends Failure {
+  /**
+   * @param {(API.InvalidCapability | API.EscalatedDelegation | API.DelegationError)[]} causes
+   * @param {object} context
+   */
+  constructor(causes, context) {
+    super();
+    this.name = the2("InvalidClaim");
+    this.causes = causes;
+    this.context = context;
+  }
+  describe() {
+    return [
+      `Can not derive ${this.context} from delegated capabilities:`,
+      ...this.causes.map((cause) => li3(cause.message))
+    ].join("\n");
+  }
+  /**
+   * @type {API.InvalidCapability | API.EscalatedDelegation | API.DelegationError}
+   */
+  get cause() {
+    if (this.causes.length !== 1) {
+      return this;
+    } else {
+      const [cause] = this.causes;
+      const value = cause.name === "InvalidClaim" ? cause.cause : cause;
+      Object.defineProperties(this, { cause: { value } });
+      return value;
+    }
+  }
+};
+var MalformedCapability2 = class extends Failure {
+  /**
+   * @param {API.Capability} capability
+   * @param {API.Failure} cause
+   */
+  constructor(capability3, cause) {
+    super();
+    this.name = the2("MalformedCapability");
+    this.capability = capability3;
+    this.cause = cause;
+  }
+  describe() {
+    return [
+      `Encountered malformed '${this.capability.can}' capability: ${format9(
+        this.capability
+      )}`,
+      li3(this.cause.message)
+    ].join("\n");
+  }
+};
+var UnknownCapability2 = class extends Failure {
+  /**
+   * @param {API.Capability} capability
+   */
+  constructor(capability3) {
+    super();
+    this.name = the2("UnknownCapability");
+    this.capability = capability3;
+  }
+  /* c8 ignore next 3 */
+  describe() {
+    return `Encountered unknown capability: ${format9(this.capability)}`;
+  }
+};
+var format9 = (capability3, space2) => JSON.stringify(
+  capability3,
+  (_key, value) => {
+    if (isLink(value)) {
+      return value.toString();
+    } else {
+      return value;
+    }
+  },
+  space2
+);
+var indent3 = (message, indent4 = "  ") => `${indent4}${message.split("\n").join(`
+${indent4}`)}`;
+var li3 = (message) => indent3(`- ${message}`);
+
+// node_modules/.pnpm/@ucanto+validator@10.0.1/node_modules/@ucanto/validator/src/capability.js
+var capability2 = ({
+  derives = defaultDerives2,
+  nb = defaultNBSchema2,
+  ...etc
+}) => new Capability2({ derives, nb, ...etc });
+var defaultNBSchema2 = (
+  /** @type {Schema.MapRepresentation<any>} */
+  schema_exports3.struct({})
+);
+var or9 = (left, right) => new Or2(left, right);
+var and3 = (...selectors) => new And2(selectors);
+var derive3 = ({ from: from11, to, derives }) => new Derive2(from11, to, derives);
+var View3 = class {
+  /**
+   * @param {API.Source} source
+   * @returns {API.MatchResult<M>}
+   */
+  /* c8 ignore next 3 */
+  match(source) {
+    return { error: new UnknownCapability2(source.capability) };
+  }
+  /**
+   * @param {API.Source[]} capabilities
+   * @returns {API.Select<M>}
+   */
+  select(capabilities) {
+    return select2(this, capabilities);
+  }
+  /**
+   * @template {API.ParsedCapability} U
+   * @param {object} source
+   * @param {API.TheCapabilityParser<API.DirectMatch<U>>} source.to
+   * @param {API.Derives<U, API.InferDeriveProof<M['value']>>} source.derives
+   * @returns {API.TheCapabilityParser<API.DerivedMatch<U, M>>}
+   */
+  derive({ derives, to }) {
+    return derive3({ derives, to, from: this });
+  }
+};
+var Unit2 = class extends View3 {
+  /**
+   * @template {API.Match} W
+   * @param {API.MatchSelector<W>} other
+   * @returns {API.CapabilityParser<M | W>}
+   */
+  or(other) {
+    return or9(this, other);
+  }
+  /**
+   * @template {API.Match} W
+   * @param {API.CapabilityParser<W>} other
+   * @returns {API.CapabilitiesParser<[M, W]>}
+   */
+  and(other) {
+    return and3(
+      /** @type {API.CapabilityParser<M>} */
+      this,
+      other
+    );
+  }
+};
+var Capability2 = class extends Unit2 {
+  /**
+   * @param {Required<Descriptor<A, R, C>>} descriptor
+   */
+  constructor(descriptor) {
+    super();
+    this.descriptor = descriptor;
+    this.schema = schema_exports3.struct({
+      can: schema_exports3.literal(descriptor.can),
+      with: descriptor.with,
+      nb: descriptor.nb
+    });
+  }
+  /**
+   * @param {API.InferCreateOptions<R, C>} options
+   */
+  create(options) {
+    const { descriptor, can } = this;
+    const decoders = descriptor.nb;
+    const data = (
+      /** @type {C} */
+      options.nb || {}
+    );
+    const resource = descriptor.with.read(options.with);
+    if (resource.error) {
+      throw Object.assign(
+        new Error(`Invalid 'with' - ${resource.error.message}`),
+        {
+          cause: resource
+        }
+      );
+    }
+    const nb = descriptor.nb.read(data);
+    if (nb.error) {
+      throw Object.assign(new Error(`Invalid 'nb' - ${nb.error.message}`), {
+        cause: nb
+      });
+    }
+    return createCapability2({ can, with: resource.ok, nb: nb.ok });
+  }
+  /**
+   * @param {API.InferInvokeOptions<R, C>} options
+   */
+  invoke({ with: with_, nb, ...options }) {
+    return invoke({
+      ...options,
+      capability: this.create(
+        /** @type {API.InferCreateOptions<R, C>} */
+        { with: with_, nb }
+      )
+    });
+  }
+  /**
+   * @param {API.InferDelegationOptions<R, C>} options
+   * @returns {Promise<API.Delegation<[API.InferDelegatedCapability<API.ParsedCapability<A, R, C>>]>>}
+   */
+  async delegate({ nb: input = {}, with: with_, ...options }) {
+    const { descriptor, can } = this;
+    const readers = descriptor.nb;
+    const resource = descriptor.with.read(with_);
+    if (resource.error) {
+      throw Object.assign(
+        new Error(`Invalid 'with' - ${resource.error.message}`),
+        {
+          cause: resource
+        }
+      );
+    }
+    const nb = descriptor.nb.partial().read(input);
+    if (nb.error) {
+      throw Object.assign(new Error(`Invalid 'nb' - ${nb.error.message}`), {
+        cause: nb
+      });
+    }
+    return delegate({
+      capabilities: [createCapability2({ can, with: resource.ok, nb: nb.ok })],
+      ...options
+    });
+  }
+  get can() {
+    return this.descriptor.can;
+  }
+  /**
+   * @param {API.Source} source
+   * @returns {API.MatchResult<API.DirectMatch<API.ParsedCapability<A, R, C>>>}
+   */
+  match(source) {
+    const result = parseCapability2(this.descriptor, source);
+    return result.error ? result : { ok: new Match3(source, result.ok, this.descriptor) };
+  }
+  toString() {
+    return JSON.stringify({ can: this.descriptor.can });
+  }
+};
+var createCapability2 = ({ can, with: with_, nb }) => (
+  /** @type {API.InferCapability<T>} */
+  {
+    can,
+    with: with_,
+    ...isEmpty2(nb) ? {} : { nb }
+  }
+);
+var isEmpty2 = (object) => {
+  for (const _ in object) {
+    return false;
+  }
+  return true;
+};
+var Or2 = class extends Unit2 {
+  /**
+   * @param {API.Matcher<M>} left
+   * @param {API.Matcher<W>} right
+   */
+  constructor(left, right) {
+    super();
+    this.left = left;
+    this.right = right;
+  }
+  /**
+   * @param {API.Source} capability
+   * @return {API.MatchResult<M|W>}
+   */
+  match(capability3) {
+    const left = this.left.match(capability3);
+    if (left.error) {
+      const right = this.right.match(capability3);
+      if (right.error) {
+        return right.error.name === "MalformedCapability" ? (
+          //
+          right
+        ) : (
+          //
+          left
+        );
+      } else {
+        return right;
+      }
+    } else {
+      return left;
+    }
+  }
+  toString() {
+    return `${this.left.toString()}|${this.right.toString()}`;
+  }
+};
+var And2 = class _And extends View3 {
+  /**
+   * @param {Selectors} selectors
+   */
+  constructor(selectors) {
+    super();
+    this.selectors = selectors;
+  }
+  /**
+   * @param {API.Source} capability
+   * @returns {API.MatchResult<API.Amplify<API.InferMembers<Selectors>>>}
+   */
+  match(capability3) {
+    const group = [];
+    for (const selector of this.selectors) {
+      const result = selector.match(capability3);
+      if (result.error) {
+        return result;
+      } else {
+        group.push(result.ok);
+      }
+    }
+    return {
+      ok: new AndMatch2(
+        /** @type {API.InferMembers<Selectors>} */
+        group
+      )
+    };
+  }
+  /**
+   * @param {API.Source[]} capabilities
+   */
+  select(capabilities) {
+    return selectGroup2(this, capabilities);
+  }
+  /**
+   * @template E
+   * @template {API.Match} X
+   * @param {API.MatchSelector<API.Match<E, X>>} other
+   * @returns {API.CapabilitiesParser<[...API.InferMembers<Selectors>, API.Match<E, X>]>}
+   */
+  and(other) {
+    return new _And([...this.selectors, other]);
+  }
+  toString() {
+    return `[${this.selectors.map(String).join(", ")}]`;
+  }
+};
+var Derive2 = class extends Unit2 {
+  /**
+   * @param {API.MatchSelector<M>} from
+   * @param {API.TheCapabilityParser<API.DirectMatch<T>>} to
+   * @param {API.Derives<T, API.InferDeriveProof<M['value']>>} derives
+   */
+  constructor(from11, to, derives) {
+    super();
+    this.from = from11;
+    this.to = to;
+    this.derives = derives;
+  }
+  /**
+   * @type {typeof this.to['create']}
+   */
+  create(options) {
+    return this.to.create(options);
+  }
+  /**
+   * @type {typeof this.to['invoke']}
+   */
+  invoke(options) {
+    return this.to.invoke(options);
+  }
+  /**
+   * @type {typeof this.to['delegate']}
+   */
+  delegate(options) {
+    return this.to.delegate(options);
+  }
+  get can() {
+    return this.to.can;
+  }
+  /**
+   * @param {API.Source} capability
+   * @returns {API.MatchResult<API.DerivedMatch<T, M>>}
+   */
+  match(capability3) {
+    const match6 = this.to.match(capability3);
+    if (match6.error) {
+      return match6;
+    } else {
+      return { ok: new DerivedMatch2(match6.ok, this.from, this.derives) };
+    }
+  }
+  toString() {
+    return this.to.toString();
+  }
+};
+var Match3 = class _Match {
+  /**
+   * @param {API.Source} source
+   * @param {API.ParsedCapability<A, R, C>} value
+   * @param {Required<Descriptor<A, R, C>>} descriptor
+   */
+  constructor(source, value, descriptor) {
+    this.source = [source];
+    this.value = value;
+    this.descriptor = descriptor;
+  }
+  get can() {
+    return this.value.can;
+  }
+  get proofs() {
+    const proofs2 = [this.source[0].delegation];
+    Object.defineProperties(this, {
+      proofs: { value: proofs2 }
+    });
+    return proofs2;
+  }
+  /**
+   * @param {API.CanIssue} context
+   * @returns {API.DirectMatch<API.ParsedCapability<A, R, C>>|null}
+   */
+  prune(context) {
+    if (context.canIssue(this.value, this.source[0].delegation.issuer.did())) {
+      return null;
+    } else {
+      return this;
+    }
+  }
+  /**
+   * @param {API.Source[]} capabilities
+   * @returns {API.Select<API.DirectMatch<API.ParsedCapability<A, R, C>>>}
+   */
+  select(capabilities) {
+    const unknown2 = [];
+    const errors = [];
+    const matches = [];
+    for (const capability3 of capabilities) {
+      const result = resolveCapability2(this.descriptor, this.value, capability3);
+      if (result.ok) {
+        const claim2 = this.descriptor.derives(this.value, result.ok);
+        if (claim2.error) {
+          errors.push(
+            new DelegationError2(
+              [new EscalatedCapability2(this.value, result.ok, claim2.error)],
+              this
+            )
+          );
+        } else {
+          matches.push(new _Match(capability3, result.ok, this.descriptor));
+        }
+      } else {
+        switch (result.error.name) {
+          case "UnknownCapability":
+            unknown2.push(result.error.capability);
+            break;
+          case "MalformedCapability":
+          default:
+            errors.push(new DelegationError2([result.error], this));
+        }
+      }
+    }
+    return { matches, unknown: unknown2, errors };
+  }
+  toString() {
+    const { nb } = this.value;
+    return JSON.stringify({
+      can: this.descriptor.can,
+      with: this.value.with,
+      nb: nb && Object.keys(nb).length > 0 ? nb : void 0
+    });
+  }
+};
+var DerivedMatch2 = class _DerivedMatch {
+  /**
+   * @param {API.DirectMatch<T>} selected
+   * @param {API.MatchSelector<M>} from
+   * @param {API.Derives<T, API.InferDeriveProof<M['value']>>} derives
+   */
+  constructor(selected, from11, derives) {
+    this.selected = selected;
+    this.from = from11;
+    this.derives = derives;
+  }
+  get can() {
+    return this.value.can;
+  }
+  get source() {
+    return this.selected.source;
+  }
+  get proofs() {
+    const proofs2 = [];
+    for (const { delegation } of this.selected.source) {
+      proofs2.push(delegation);
+    }
+    Object.defineProperties(this, { proofs: { value: proofs2 } });
+    return proofs2;
+  }
+  get value() {
+    return this.selected.value;
+  }
+  /**
+   * @param {API.CanIssue} context
+   */
+  prune(context) {
+    const selected = (
+      /** @type {API.DirectMatch<T>|null} */
+      this.selected.prune(context)
+    );
+    return selected ? new _DerivedMatch(selected, this.from, this.derives) : null;
+  }
+  /**
+   * @param {API.Source[]} capabilities
+   */
+  select(capabilities) {
+    const { derives, selected, from: from11 } = this;
+    const { value } = selected;
+    const direct = selected.select(capabilities);
+    const derived = from11.select(capabilities);
+    const matches = [];
+    const errors = [];
+    for (const match6 of derived.matches) {
+      const result = derives(value, match6.value);
+      if (result.error) {
+        errors.push(
+          new DelegationError2(
+            [new EscalatedCapability2(value, match6.value, result.error)],
+            this
+          )
+        );
+      } else {
+        matches.push(match6);
+      }
+    }
+    return {
+      unknown: intersection3(direct.unknown, derived.unknown),
+      errors: [
+        ...errors,
+        ...direct.errors,
+        ...derived.errors.map((error4) => new DelegationError2([error4], this))
+      ],
+      matches: [
+        ...direct.matches.map((match6) => new _DerivedMatch(match6, from11, derives)),
+        ...matches
+      ]
+    };
+  }
+  toString() {
+    return this.selected.toString();
+  }
+};
+var AndMatch2 = class _AndMatch {
+  /**
+   * @param {API.Match[]} matches
+   */
+  constructor(matches) {
+    this.matches = matches;
+  }
+  get selectors() {
+    return this.matches;
+  }
+  /**
+   * @returns {API.Source[]}
+   */
+  get source() {
+    const source = [];
+    for (const match6 of this.matches) {
+      source.push(...match6.source);
+    }
+    Object.defineProperties(this, { source: { value: source } });
+    return source;
+  }
+  /**
+   * @param {API.CanIssue} context
+   */
+  prune(context) {
+    const matches = [];
+    for (const match6 of this.matches) {
+      const pruned = match6.prune(context);
+      if (pruned) {
+        matches.push(pruned);
+      }
+    }
+    return matches.length === 0 ? null : new _AndMatch(matches);
+  }
+  get proofs() {
+    const proofs2 = [];
+    for (const { delegation } of this.source) {
+      proofs2.push(delegation);
+    }
+    Object.defineProperties(this, { proofs: { value: proofs2 } });
+    return proofs2;
+  }
+  /**
+   * @type {API.InferValue<API.InferMembers<Selectors>>}
+   */
+  get value() {
+    const value = [];
+    for (const match6 of this.matches) {
+      value.push(match6.value);
+    }
+    Object.defineProperties(this, { value: { value } });
+    return (
+      /** @type {any} */
+      value
+    );
+  }
+  /**
+   * @param {API.Source[]} capabilities
+   */
+  select(capabilities) {
+    return selectGroup2(this, capabilities);
+  }
+  toString() {
+    return `[${this.matches.map((match6) => match6.toString()).join(", ")}]`;
+  }
+};
+var resolveAbility2 = (pattern, can, fallback) => {
+  switch (pattern) {
+    case can:
+    case "*":
+      return can;
+    default:
+      return pattern.endsWith("/*") && can.startsWith(pattern.slice(0, -1)) ? can : fallback;
+  }
+};
+var resolveResource2 = (source, uri2, fallback) => {
+  switch (source) {
+    case uri2:
+    case "ucan:*":
+      return uri2;
+    default:
+      return fallback;
+  }
+};
+var parseCapability2 = (descriptor, source) => {
+  const { delegation } = source;
+  const capability3 = (
+    /** @type {API.Capability<A, R, C>} */
+    source.capability
+  );
+  if (descriptor.can !== capability3.can) {
+    return { error: new UnknownCapability2(capability3) };
+  }
+  const uri2 = descriptor.with.read(capability3.with);
+  if (uri2.error) {
+    return { error: new MalformedCapability2(capability3, uri2.error) };
+  }
+  const nb = descriptor.nb.read(capability3.nb || {});
+  if (nb.error) {
+    return { error: new MalformedCapability2(capability3, nb.error) };
+  }
+  return { ok: new CapabilityView2(descriptor.can, uri2.ok, nb.ok, delegation) };
+};
+var resolveCapability2 = (descriptor, claimed, { capability: capability3, delegation }) => {
+  const can = resolveAbility2(capability3.can, claimed.can, null);
+  if (can == null) {
+    return { error: new UnknownCapability2(capability3) };
+  }
+  const resource = resolveResource2(
+    capability3.with,
+    claimed.with,
+    capability3.with
+  );
+  const uri2 = descriptor.with.read(resource);
+  if (uri2.error) {
+    return { error: new MalformedCapability2(capability3, uri2.error) };
+  }
+  const nb = descriptor.nb.read({
+    ...claimed.nb,
+    ...capability3.nb
+  });
+  if (nb.error) {
+    return { error: new MalformedCapability2(capability3, nb.error) };
+  }
+  return { ok: new CapabilityView2(can, uri2.ok, nb.ok, delegation) };
+};
+var CapabilityView2 = class {
+  /**
+   * @param {A} can
+   * @param {R} with_
+   * @param {C} nb
+   * @param {API.Delegation} delegation
+   */
+  constructor(can, with_, nb, delegation) {
+    this.can = can;
+    this.with = with_;
+    this.delegation = delegation;
+    this.nb = nb;
+  }
+};
+var select2 = (matcher, capabilities) => {
+  const unknown2 = [];
+  const matches = [];
+  const errors = [];
+  for (const capability3 of capabilities) {
+    const result = matcher.match(capability3);
+    if (result.error) {
+      switch (result.error.name) {
+        case "UnknownCapability":
+          unknown2.push(result.error.capability);
+          break;
+        case "MalformedCapability":
+        default:
+          errors.push(new DelegationError2([result.error], result.error.capability));
+      }
+    } else {
+      matches.push(result.ok);
+    }
+  }
+  return { matches, errors, unknown: unknown2 };
+};
+var selectGroup2 = (self2, capabilities) => {
+  let unknown2;
+  const data = [];
+  const errors = [];
+  for (const selector of self2.selectors) {
+    const selected = selector.select(capabilities);
+    unknown2 = unknown2 ? intersection3(unknown2, selected.unknown) : selected.unknown;
+    for (const error4 of selected.errors) {
+      errors.push(new DelegationError2([error4], self2));
+    }
+    data.push(selected.matches);
+  }
+  const matches = combine2(data).map((group) => new AndMatch2(group));
+  return {
+    unknown: (
+      /* c8 ignore next */
+      unknown2 || []
+    ),
+    errors,
+    matches
+  };
+};
+var defaultDerives2 = (claimed, delegated) => {
+  if (delegated.with.endsWith("*")) {
+    if (!claimed.with.startsWith(delegated.with.slice(0, -1))) {
+      return schema_exports3.error(
+        `Resource ${claimed.with} does not match delegated ${delegated.with} `
+      );
+    }
+  } else if (delegated.with !== claimed.with) {
+    return schema_exports3.error(
+      `Resource ${claimed.with} is not contained by ${delegated.with}`
+    );
+  }
+  const caveats = delegated.nb || {};
+  const nb = claimed.nb || {};
+  const kv = entries2(caveats);
+  for (const [name8, value] of kv) {
+    if (nb[name8] != value) {
+      return schema_exports3.error(`${String(name8)}: ${nb[name8]} violates ${value}`);
+    }
+  }
+  return { ok: true };
+};
+
+// node_modules/.pnpm/@storacha+capabilities@2.2.0/node_modules/@storacha/capabilities/dist/utils.js
 var ProviderDID = did_exports2.match({ method: "web" });
 var SpaceDID = did_exports2.match({ method: "key" });
 var AccountDID = did_exports2.match({ method: "mailto" });
@@ -14999,12 +15824,12 @@ var equalLink = (claimed, delegated) => {
     return ok({});
   }
 };
-var and3 = (result) => result.error ? result : void 0;
+var and4 = (result) => result.error ? result : void 0;
 
-// node_modules/.pnpm/@storacha+capabilities@1.8.0/node_modules/@storacha/capabilities/dist/store.js
+// node_modules/.pnpm/@storacha+capabilities@2.2.0/node_modules/@storacha/capabilities/dist/store.js
 var code10 = 514;
 var CARLink = schema_exports3.link({ code: code10, version: 1 });
-var store = capability({
+var store = capability2({
   can: "store/*",
   /**
    * DID of the (memory) space where CAR is intended to
@@ -15013,7 +15838,7 @@ var store = capability({
   with: SpaceDID,
   derives: equalWith
 });
-var add = capability({
+var add = capability2({
   can: "store/add",
   /**
    * DID of the (memory) space where CAR is intended to
@@ -15054,7 +15879,7 @@ var add = capability({
     }
   }
 });
-var get2 = capability({
+var get2 = capability2({
   can: "store/get",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15065,7 +15890,7 @@ var get2 = capability({
   }),
   derives: equalLink
 });
-var remove = capability({
+var remove = capability2({
   can: "store/remove",
   /**
    * DID of the (memory) space where CAR is intended to
@@ -15080,7 +15905,7 @@ var remove = capability({
   }),
   derives: equalLink
 });
-var list = capability({
+var list = capability2({
   can: "store/list",
   /**
    * DID of the (memory) space where CAR is intended to
@@ -15111,7 +15936,7 @@ var list = capability({
 });
 var all = add.or(remove).or(list);
 
-// node_modules/.pnpm/@ucanto+transport@9.2.0/node_modules/@ucanto/transport/src/car/request.js
+// node_modules/.pnpm/@ucanto+transport@9.2.1/node_modules/@ucanto/transport/src/car/request.js
 var request_exports = {};
 __export(request_exports, {
   codec: () => car_exports,
@@ -15151,7 +15976,7 @@ var decode25 = async ({ headers, body }) => {
   );
 };
 
-// node_modules/.pnpm/@ucanto+transport@9.2.0/node_modules/@ucanto/transport/src/car/response.js
+// node_modules/.pnpm/@ucanto+transport@9.2.1/node_modules/@ucanto/transport/src/car/response.js
 var response_exports = {};
 __export(response_exports, {
   codec: () => car_exports,
@@ -15189,7 +16014,7 @@ var decode26 = async ({ headers, body }) => {
   );
 };
 
-// node_modules/.pnpm/@ucanto+transport@9.2.0/node_modules/@ucanto/transport/src/codec.js
+// node_modules/.pnpm/@ucanto+transport@9.2.1/node_modules/@ucanto/transport/src/codec.js
 var inbound = (source) => new Inbound(source);
 var Inbound = class {
   /**
@@ -15213,8 +16038,8 @@ var Inbound = class {
     const accept = parseAcceptHeader(headers.accept || headers.Accept || "*/*");
     for (const { category, type } of accept) {
       for (const encoder2 of this.encoders) {
-        const select2 = (category === "*" || category === encoder2.category) && (type === "*" || type === encoder2.type);
-        if (select2) {
+        const select3 = (category === "*" || category === encoder2.category) && (type === "*" || type === encoder2.type);
+        if (select3) {
           return { ok: { ...encoder2, decoder: decoder2 } };
         }
       }
@@ -15329,7 +16154,7 @@ var formatMediaType = ({ category, type, preference }) => (
 var parseAcceptHeader = (source) => source.split(",").map(parseMediaType).sort((a, b) => b.preference - a.preference);
 var formatAcceptHeader = (source) => source.map(formatMediaType).join(", ");
 
-// node_modules/.pnpm/@ucanto+transport@9.2.0/node_modules/@ucanto/transport/src/car.js
+// node_modules/.pnpm/@ucanto+transport@9.2.1/node_modules/@ucanto/transport/src/car.js
 var contentType5 = car_exports.contentType;
 var inbound2 = inbound({
   decoders: {
@@ -15348,8 +16173,8 @@ var outbound2 = outbound({
   }
 });
 
-// node_modules/.pnpm/@storacha+capabilities@1.8.0/node_modules/@storacha/capabilities/dist/upload.js
-var upload = capability({
+// node_modules/.pnpm/@storacha+capabilities@2.2.0/node_modules/@storacha/capabilities/dist/upload.js
+var upload = capability2({
   can: "upload/*",
   /**
    * DID of the (memory) space where upload is add to the
@@ -15359,7 +16184,7 @@ var upload = capability({
   derives: equalWith
 });
 var CARLink2 = link_exports2.match({ code: car_exports.code, version: 1 });
-var add2 = capability({
+var add2 = capability2({
   can: "upload/add",
   /**
    * DID of the (memory) space where uploaded is added.
@@ -15376,10 +16201,10 @@ var add2 = capability({
     shards: CARLink2.array().optional()
   }),
   derives: (self2, from11) => {
-    return and3(equalWith(self2, from11)) || and3(equal(self2.nb.root, from11.nb.root, "root")) || and3(equal(self2.nb.shards, from11.nb.shards, "shards")) || ok({});
+    return and4(equalWith(self2, from11)) || and4(equal(self2.nb.root, from11.nb.root, "root")) || and4(equal(self2.nb.shards, from11.nb.shards, "shards")) || ok({});
   }
 });
-var get3 = capability({
+var get3 = capability2({
   can: "upload/get",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15399,7 +16224,7 @@ var get3 = capability({
     return equal(self2.nb.root, from11.nb.root, "root");
   }
 });
-var remove2 = capability({
+var remove2 = capability2({
   can: "upload/remove",
   /**
    * DID of the (memory) space where uploaded is removed from.
@@ -15412,10 +16237,10 @@ var remove2 = capability({
     root: link_exports2
   }),
   derives: (self2, from11) => {
-    return and3(equalWith(self2, from11)) || and3(equal(self2.nb.root, from11.nb.root, "root")) || ok({});
+    return and4(equalWith(self2, from11)) || and4(equal(self2.nb.root, from11.nb.root, "root")) || ok({});
   }
 });
-var list2 = capability({
+var list2 = capability2({
   can: "upload/list",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15436,27 +16261,27 @@ var list2 = capability({
 });
 var all2 = add2.or(remove2).or(list2);
 
-// node_modules/.pnpm/@storacha+capabilities@1.8.0/node_modules/@storacha/capabilities/dist/top.js
-var top = capability({
+// node_modules/.pnpm/@storacha+capabilities@2.2.0/node_modules/@storacha/capabilities/dist/top.js
+var top = capability2({
   can: "*",
   with: schema_exports3.or(schema_exports3.did(), schema_exports3.literal("ucan:*")),
   derives: equalWith
 });
 
-// node_modules/.pnpm/@storacha+capabilities@1.8.0/node_modules/@storacha/capabilities/dist/space.js
-var space = capability({
+// node_modules/.pnpm/@storacha+capabilities@2.2.0/node_modules/@storacha/capabilities/dist/space.js
+var space = capability2({
   can: "space/*",
   with: SpaceDID,
   derives: equalWith
 });
 var info = add.or(list).or(remove).or(add2).or(list2).or(remove2).derive({
-  to: capability({
+  to: capability2({
     can: "space/info",
     with: SpaceDID
   }),
   derives: equalWith
 });
-var allocate = capability({
+var allocate = capability2({
   can: "space/allocate",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15471,12 +16296,12 @@ var allocate = capability({
     }
   }
 });
-var contentServe = capability({
+var contentServe = capability2({
   can: "space/content/serve/*",
   with: SpaceDID,
   derives: equalWith
 });
-var egressRecord = capability({
+var egressRecord = capability2({
   can: "space/content/serve/egress/record",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15489,7 +16314,7 @@ var egressRecord = capability({
   }),
   derives: equalWith
 });
-var decrypt = capability({
+var decrypt = capability2({
   can: "space/content/decrypt",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15505,7 +16330,7 @@ var decrypt = capability({
     return ok({});
   }
 });
-var EncryptionSetup = capability({
+var EncryptionSetup = capability2({
   can: "space/encryption/setup",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15531,7 +16356,7 @@ var EncryptionSetup = capability({
     return ok({});
   }
 });
-var EncryptionKeyDecrypt = capability({
+var EncryptionKeyDecrypt = capability2({
   can: "space/encryption/key/decrypt",
   with: SpaceDID,
   nb: schema_exports3.struct({
@@ -15774,12 +16599,12 @@ function limitReader2(reader, byteLimit) {
 
 // node_modules/.pnpm/@ipld+car@5.4.2/node_modules/@ipld/car/src/promise-fs-opts.js
 var import_fs2 = __toESM(require("fs"), 1);
-var import_util3 = require("util");
+var import_util5 = require("util");
 var hasFS = Boolean(import_fs2.default);
 var _fsReadFn;
 function fsread2(fd, buffer2, offset, length2, position) {
   if (!_fsReadFn) {
-    _fsReadFn = (0, import_util3.promisify)(import_fs2.default.read);
+    _fsReadFn = (0, import_util5.promisify)(import_fs2.default.read);
   }
   return _fsReadFn(fd, buffer2, offset, length2, position);
 }
@@ -15974,7 +16799,7 @@ var CarReader2 = class extends CarReader {
 // node_modules/.pnpm/@ipld+car@5.4.2/node_modules/@ipld/car/src/encoder.js
 var import_varint4 = __toESM(require_varint(), 1);
 
-// node_modules/.pnpm/@storacha+client@1.7.9_encoding@0.1.13/node_modules/@storacha/client/dist/proof.js
+// node_modules/.pnpm/@storacha+client@2.0.4_encoding@0.1.13/node_modules/@storacha/client/dist/proof.js
 var parse7 = async (str) => {
   try {
     const cid = parse4(str, base64);
@@ -16135,7 +16960,7 @@ var UcanPrivacyValidationServiceImpl = class {
         );
         const now2 = Math.floor(Date.now() / 1e3);
         return delegation.expiration > now2 && delegation.capabilities.some(
-          (capability2) => capability2.can === decrypt.can && capability2.with === spaceDID
+          (capability3) => capability3.can === decrypt.can && capability3.with === spaceDID
         );
       });
       if (contentDecryptProofs.length === 0) {
@@ -16294,25 +17119,25 @@ function createService(ctx, env) {
         setup: provideAdvanced({
           capability: EncryptionSetup,
           audience: AudienceSchema,
-          handler: async ({ capability: capability2, invocation }) => {
+          handler: async ({ capability: capability3, invocation }) => {
             if (ctx.kmsRateLimiter) {
-              const rateLimitViolation = await ctx.kmsRateLimiter.checkRateLimit(invocation, EncryptionSetup.can, capability2.with);
+              const rateLimitViolation = await ctx.kmsRateLimiter.checkRateLimit(invocation, EncryptionSetup.can, capability3.with);
               if (rateLimitViolation) {
                 return error3(new Failure(rateLimitViolation));
               }
             }
             const space2 = (
               /** @type {import('@storacha/capabilities/types').SpaceDID} */
-              capability2.with
+              capability3.with
             );
             const request = {
               space: space2,
-              location: capability2.nb?.location,
-              keyring: capability2.nb?.keyring
+              location: capability3.nb?.location,
+              keyring: capability3.nb?.keyring
             };
             const result = await handleEncryptionSetup(request, invocation, ctx, env);
             if (result.ok && ctx.kmsRateLimiter) {
-              ctx.waitUntil(ctx.kmsRateLimiter.recordOperation(invocation, EncryptionSetup.can, capability2.with));
+              ctx.waitUntil(ctx.kmsRateLimiter.recordOperation(invocation, EncryptionSetup.can, capability3.with));
             }
             return result;
           }
@@ -16321,25 +17146,25 @@ function createService(ctx, env) {
           decrypt: provideAdvanced({
             capability: EncryptionKeyDecrypt,
             audience: AudienceSchema,
-            handler: async ({ capability: capability2, invocation }) => {
+            handler: async ({ capability: capability3, invocation }) => {
               if (ctx.kmsRateLimiter) {
-                const rateLimitViolation = await ctx.kmsRateLimiter.checkRateLimit(invocation, EncryptionKeyDecrypt.can, capability2.with);
+                const rateLimitViolation = await ctx.kmsRateLimiter.checkRateLimit(invocation, EncryptionKeyDecrypt.can, capability3.with);
                 if (rateLimitViolation) {
                   return error3(new Failure(rateLimitViolation));
                 }
               }
               const space2 = (
                 /** @type {import('@storacha/capabilities/types').SpaceDID} */
-                capability2.with
+                capability3.with
               );
-              const encryptedSymmetricKey = capability2.nb?.key;
+              const encryptedSymmetricKey = capability3.nb?.key;
               const request = {
                 space: space2,
                 encryptedSymmetricKey
               };
               const result = await handleKeyDecryption(request, invocation, ctx, env);
               if (result.ok && ctx.kmsRateLimiter) {
-                ctx.waitUntil(ctx.kmsRateLimiter.recordOperation(invocation, EncryptionKeyDecrypt.can, capability2.with));
+                ctx.waitUntil(ctx.kmsRateLimiter.recordOperation(invocation, EncryptionKeyDecrypt.can, capability3.with));
               }
               return result;
             }
@@ -16391,8 +17216,8 @@ async function startLocalServer(config) {
   const kms = new OnePasswordKMSService({
     createClient: async (accountName) => (0, import_sdk.createClient)({
       auth: new import_sdk.DesktopAuth(accountName),
-      integrationName: "storacha-ucan-kms",
-      integrationVersion: "1.0.0"
+      integrationName: "storacha-ucan-kms-1",
+      integrationVersion: "1.0.1"
     }),
     mappings,
     auditLog
@@ -16425,7 +17250,9 @@ async function startLocalServer(config) {
     /** @type {any} */
     {
       ENVIRONMENT: "local",
-      UCAN_KMS_SERVICE_DID: identity2.did()
+      UCAN_KMS_SERVICE_DID: identity2.did(),
+      UPLOAD_SERVICE_URL: "https://up.storacha.network",
+      UPLOAD_SERVICE_DID: "did:web:up.storacha.network"
     }
   );
   const server = (0, import_node_http.createServer)(async (req, res) => {
