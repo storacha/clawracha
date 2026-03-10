@@ -26,8 +26,12 @@ export interface DelegationBundle {
 export async function createDelegationBundle(
   bundle: DelegationBundle,
 ): Promise<Uint8Array> {
+  // Strip undefined values — IPLD/CBOR cannot encode undefined
+  const clean = Object.fromEntries(
+    Object.entries(bundle).filter(([, v]) => v !== undefined),
+  );
   const rootBlock = await encode({
-    value: bundle,
+    value: clean,
     codec: cbor,
     hasher: sha256,
   });

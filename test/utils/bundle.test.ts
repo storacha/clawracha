@@ -67,4 +67,91 @@ describe("delegation bundle", () => {
       "missing required keys",
     );
   });
+
+  it("round-trips public space bundle with undefined optional fields", async () => {
+    const upload = new Uint8Array([1, 2, 3]);
+    const name = new Uint8Array([4, 5, 6]);
+    const plan = new Uint8Array([7, 8, 9]);
+
+    // Simulates a public space — kms fields are undefined
+    const carBytes = await createDelegationBundle({
+      upload,
+      name,
+      plan,
+      access: undefined,
+      kmsProvider: undefined,
+      kmsLocation: undefined,
+      kmsKeyring: undefined,
+    });
+
+    const extracted = await extractDelegationBundle(carBytes);
+    expect(new Uint8Array(extracted.upload)).toEqual(upload);
+    expect(new Uint8Array(extracted.name)).toEqual(name);
+    expect(new Uint8Array(extracted.plan)).toEqual(plan);
+    expect(extracted.access).toBeUndefined();
+    expect(extracted.kmsProvider).toBeUndefined();
+    expect(extracted.kmsLocation).toBeUndefined();
+    expect(extracted.kmsKeyring).toBeUndefined();
+  });
+
+  it("round-trips private space bundle with 1password kms fields", async () => {
+    const upload = new Uint8Array([1, 2, 3]);
+    const name = new Uint8Array([4, 5, 6]);
+    const plan = new Uint8Array([7, 8, 9]);
+
+    const carBytes = await createDelegationBundle({
+      upload,
+      name,
+      plan,
+      access: {
+        type: "private",
+        encryption: { provider: "1password", algorithm: "rsa-oaep-256" },
+      },
+      kmsProvider: "1password",
+      kmsLocation: "my-team.1password.com",
+      kmsKeyring: "Storacha Keys",
+    });
+
+    const extracted = await extractDelegationBundle(carBytes);
+    expect(new Uint8Array(extracted.upload)).toEqual(upload);
+    expect(new Uint8Array(extracted.name)).toEqual(name);
+    expect(new Uint8Array(extracted.plan)).toEqual(plan);
+    expect(extracted.access).toEqual({
+      type: "private",
+      encryption: { provider: "1password", algorithm: "rsa-oaep-256" },
+    });
+    expect(extracted.kmsProvider).toBe("1password");
+    expect(extracted.kmsLocation).toBe("my-team.1password.com");
+    expect(extracted.kmsKeyring).toBe("Storacha Keys");
+  });
+
+  it("round-trips private space bundle with google kms fields", async () => {
+    const upload = new Uint8Array([11, 22, 33]);
+    const name = new Uint8Array([44, 55, 66]);
+    const plan = new Uint8Array([77, 88, 99]);
+
+    const carBytes = await createDelegationBundle({
+      upload,
+      name,
+      plan,
+      access: {
+        type: "private",
+        encryption: { provider: "google", algorithm: "rsa-oaep-256" },
+      },
+      kmsProvider: "google",
+    });
+
+    const extracted = await extractDelegationBundle(carBytes);
+    expect(new Uint8Array(extracted.upload)).toEqual(upload);
+    expect(new Uint8Array(extracted.name)).toEqual(name);
+    expect(new Uint8Array(extracted.plan)).toEqual(plan);
+    expect(extracted.access).toEqual({
+      type: "private",
+      encryption: { provider: "google", algorithm: "rsa-oaep-256" },
+    });
+    expect(extracted.kmsProvider).toBe("google");
+    // google KMS doesn't use location/keyring from 1password
+    expect(extracted.kmsLocation).toBeUndefined();
+    expect(extracted.kmsKeyring).toBeUndefined();
+  });
 });
