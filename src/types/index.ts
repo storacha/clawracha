@@ -10,6 +10,12 @@ import type {
   EncryptionConfig,
 } from "@storacha/encrypt-upload-client/types";
 
+/** Gateway config shape — replaces OpenClawConfig["gateway"] for decoupling. */
+export interface GatewayConfig {
+  port?: number;
+  auth?: { token?: string; password?: string };
+}
+
 /** Plugin configuration (from openclaw.plugin.json schema) */
 export interface SyncPluginConfig {
   enabled: boolean;

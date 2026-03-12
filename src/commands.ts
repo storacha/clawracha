@@ -7,9 +7,9 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import type {
   DeviceConfig,
+  GatewayConfig,
   SpaceAccess,
   SyncPluginConfig,
 } from "./types/index.js";
@@ -70,7 +70,7 @@ export async function saveDeviceConfig(
 export async function requestWorkspaceUpdate(
   workspace: string,
   agentId: string,
-  gatewayConfig: NonNullable<OpenClawConfig["gateway"]>,
+  gatewayConfig: GatewayConfig,
 ): Promise<void> {
   const DEFAULT_GATEWAY_PORT = 18789;
   let port = DEFAULT_GATEWAY_PORT;
@@ -117,14 +117,14 @@ export async function startWorkspaceSync(
   agentId: string,
   pluginConfig: Partial<SyncPluginConfig>,
   initialAdd: boolean,
-  logger: { info: (msg: string) => void; warn: (msg: string) => void },
+  logger: { info: (msg: string) => void; warn: (msg: string) => void; error: (msg: string) => void },
 ): Promise<WorkspaceSync | null> {
   const deviceConfig = await loadDeviceConfig(workspace);
   if (!deviceConfig || !deviceConfig.setupComplete) {
     return null;
   }
   if (deviceConfig.kmsProvider === "1password") {
-    await startLocalKms();
+    await startLocalKms(logger);
   }
   const engine = await SyncEngine.fromConfig(workspace, deviceConfig);
   await engine.start();
@@ -167,6 +167,25 @@ export interface InitResult {
   agentKey: string;
 }
 
+export interface StatusResult {
+  initialized: boolean;
+  setupComplete: boolean;
+  message: string;
+  spaceDID?: string;
+  agentDID?: string;
+  uploadDelegation?: boolean;
+  nameDelegation?: boolean;
+  planDelegation?: boolean;
+  accessType?: string;
+  nameArchive?: boolean;
+}
+
+export interface InspectResult {
+  initialized: boolean;
+  message: string;
+  state?: Awaited<ReturnType<SyncEngine["inspect"]>>;
+}
+
 export interface SetupResult {
   agentDID: string;
   spaceDID: string | undefined;
@@ -204,13 +223,101 @@ export async function doInit(workspace: string): Promise<InitResult> {
   };
 }
 
+export async function doStatus(workspace: string): Promise<StatusResult> {
+  const config = await loadDeviceConfig(workspace);
+  if (!config) {
+    return { initialized: false, setupComplete: false, message: "Not initialized" };
+  }
+  const agent = Agent.parse(config.agentKey);
+  return {
+    initialized: true,
+    setupComplete: !!config.setupComplete,
+    message: config.setupComplete ? "Ready" : "Initialized but not set up",
+    spaceDID: config.spaceDID,
+    agentDID: agent.did(),
+    uploadDelegation: !!config.uploadDelegation,
+    nameDelegation: !!config.nameDelegation,
+    planDelegation: !!config.planDelegation,
+    accessType: config.storachaAccess?.type,
+    nameArchive: !!config.nameArchive,
+  };
+}
+
+export async function doInspect(workspace: string): Promise<InspectResult> {
+  const config = await loadDeviceConfig(workspace);
+  if (!config) {
+    return { initialized: false, message: "Not initialized" };
+  }
+  if (!config.setupComplete) {
+    return { initialized: false, message: "Not set up" };
+  }
+
+  const engine = await SyncEngine.fromConfig(workspace, config);
+  await engine.start();
+  try {
+    const state = await engine.inspect();
+    return { initialized: true, message: "Ready", state };
+  } finally {
+    await engine.stop();
+  }
+}
+
+export async function doSyncForeground(
+  workspace: string,
+  pluginConfig: Partial<SyncPluginConfig>,
+  opts?: { signal?: AbortSignal },
+): Promise<void> {
+  const deviceConfig = await loadDeviceConfig(workspace);
+  if (!deviceConfig?.agentKey) {
+    throw new Error("Not initialized. Run `clawracha init` first.");
+  }
+  if (!deviceConfig.setupComplete) {
+    throw new Error("Not set up. Run `clawracha setup` or `clawracha join` first.");
+  }
+
+  const logger = {
+    info: (msg: string) => console.log(msg),
+    warn: (msg: string) => console.warn(msg),
+    error: (msg: string) => console.error(msg),
+  };
+
+  const sync = await startWorkspaceSync(workspace, "standalone", pluginConfig, false, logger);
+  if (!sync) {
+    throw new Error("Failed to start sync engine.");
+  }
+
+  console.log(`Syncing: ${workspace}`);
+  console.log("Press Ctrl+C to stop.\n");
+
+  return new Promise<void>((resolve, reject) => {
+    const shutdown = async () => {
+      console.log("\nShutting down...");
+      await sync.watcher.stop();
+      await sync.watcher.forceFlush();
+      await sync.engine.stop();
+      resolve();
+    };
+
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        shutdown();
+        return;
+      }
+      opts.signal.addEventListener("abort", () => shutdown(), { once: true });
+    }
+
+    process.on("SIGINT", () => shutdown());
+    process.on("SIGTERM", () => shutdown());
+  });
+}
+
 export async function doSetup(
   workspace: string,
   agentId: string,
   email: string,
   spaceName: string,
   pluginConfig: Partial<SyncPluginConfig>,
-  gatewayConfig?: NonNullable<OpenClawConfig["gateway"]>,
+  gatewayConfig?: GatewayConfig,
 ): Promise<SetupResult> {
   const deviceConfig = await loadDeviceConfig(workspace);
   if (!deviceConfig?.agentKey) {
@@ -380,7 +487,7 @@ export async function doJoin(
   agentId: string,
   bundleArg: string,
   pluginConfig: Partial<SyncPluginConfig>,
-  gatewayConfig?: NonNullable<OpenClawConfig["gateway"]>,
+  gatewayConfig?: GatewayConfig,
 ): Promise<JoinResult> {
   const deviceConfig = await loadDeviceConfig(workspace);
   if (!deviceConfig?.agentKey) {
