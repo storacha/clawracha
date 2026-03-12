@@ -22,7 +22,11 @@ let serverDid: string | null = null;
  * Start the local KMS server if not already running.
  * Returns the discovered DID.
  */
-export async function startLocalKms(): Promise<string> {
+export async function startLocalKms(logger: {
+  info: (msg: string) => void;
+  warn: (msg: string) => void;
+  error: (message: string) => void;
+}): Promise<string> {
   if (serverProcess && serverDid) return serverDid;
 
   serverProcess = fork(LOCAL_SERVER_SCRIPT, [], {
@@ -35,16 +39,16 @@ export async function startLocalKms(): Promise<string> {
 
   if (serverProcess.stdout) {
     serverProcess.stdout.on("data", (data) => {
-      console.log(`[local-kms] ${data.toString().trim()}`);
+      logger.info(`[local-kms] ${data.toString().trim()}`);
     });
   }
   if (serverProcess.stderr) {
     serverProcess.stderr.on("data", (data) => {
-      console.error(`[local-kms] ${data.toString().trim()}`);
+      logger.error(`[local-kms] ${data.toString().trim()}`);
     });
   }
   serverProcess.on("exit", (code) => {
-    console.error(`[local-kms] Process exited with code ${code}`);
+    logger.error(`[local-kms] Process exited with code ${code}`);
     serverProcess = null;
     serverDid = null;
   });
@@ -74,6 +78,9 @@ export async function startLocalKms(): Promise<string> {
 
   // Timed out — kill and throw
   stopLocalKms();
+  logger.error(
+    `[local-kms] Local KMS server failed to start within ${STARTUP_TIMEOUT_MS}ms`,
+  );
   throw new Error(
     `Local KMS server failed to start within ${STARTUP_TIMEOUT_MS}ms`,
   );
